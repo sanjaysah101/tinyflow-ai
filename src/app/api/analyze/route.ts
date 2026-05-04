@@ -1,4 +1,4 @@
-import { createClient } from "@/utils/supabase/server";
+import { db, analysisHistory } from "@/lib/db";
 import { runRouter } from "@/lib/pipeline/router";
 import { runAllSpecialists } from "@/lib/pipeline/specialist";
 import { runSynthesizer } from "@/lib/pipeline/synthesizer";
@@ -85,15 +85,14 @@ export async function POST(req: Request) {
 
         const latencyMs = Date.now() - analysisStart;
 
-        // ── Persist to Supabase ──────────────────────────────
+        // ── Persist to database via Drizzle ORM ──────────────────────────
         try {
-          const supabase = await createClient();
-          await supabase.from("analysis_history").insert({
-            code_snippet: cleanCode.slice(0, 2000),
+          await db.insert(analysisHistory).values({
+            codeSnippet: cleanCode.slice(0, 2000),
             language,
             report,
-            models_used: ["llama-3.2-1b-instruct", "qwen-2.5-coder-1.5b-instruct", "phi-3-mini-4k-instruct"],
-            latency_ms: latencyMs,
+            modelsUsed: JSON.parse(JSON.stringify(["llama-3.2-1b-instruct", "qwen-2.5-coder-1.5b-instruct", "phi-3-mini-4k-instruct"])),
+            latencyMs,
           });
         } catch (dbErr) {
           console.warn("[Analyze] Could not save to history:", dbErr);

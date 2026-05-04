@@ -1,7 +1,33 @@
-import { openrouter, MODELS } from "@/lib/openrouter";
-import { db, vulnerabilityPatterns } from "@/lib/db";
-import { eq } from "drizzle-orm";
+#!/usr/bin/env node
+
+/**
+ * Database Seeding Script
+ * Populates the vulnerability_patterns table with security patterns
+ */
+
+import postgres from "postgres";
 import { embed } from "ai";
+import { openrouter } from "@ai-sdk/openai";
+
+// Define MODELS locally to avoid import issues
+const MODELS = {
+  embedding: "text-embedding-3-small",
+};
+import { config } from "dotenv";
+
+// Load environment variables
+config({ path: ".env" });
+
+const DATABASE_URL = process.env.DATABASE_URL;
+if (!DATABASE_URL) {
+  console.error("❌ DATABASE_URL environment variable is required");
+  process.exit(1);
+}
+
+const sql = postgres(DATABASE_URL, {
+  ssl: { rejectUnauthorized: false },
+  max: 5, // Allow more connections for seeding
+});
 
 // ─── Seed Data ──────────────────────────────────────────────────────────────
 
@@ -228,20 +254,20 @@ const VULNERABILITY_PATTERNS = [
   },
 ];
 
-// ─── Seeder API Route ────────────────────────────────────────────────────────
+async function seedDatabase() {
+  console.log("🌱 Starting database seeding...");
 
-export async function GET() {
   try {
     let seeded = 0;
     let skipped = 0;
 
     for (const pattern of VULNERABILITY_PATTERNS) {
       // Check if already seeded
-      const existing = await db
-        .select({ id: vulnerabilityPatterns.id })
-        .from(vulnerabilityPatterns)
-        .where(eq(vulnerabilityPatterns.patternName, pattern.pattern_name))
-        .limit(1);
+      const existing = await sql`
+        SELECT id FROM vulnerability_patterns
+        WHERE pattern_name = ${pattern.pattern_name}
+        LIMIT 1
+      `;
 
       if (existing.length > 0) {
         skipped++;
@@ -250,8 +276,8 @@ export async function GET() {
 
       // Generate embedding for the pattern
       const textToEmbed = `${pattern.pattern_name}: ${pattern.description}. Fix: ${pattern.fix_suggestion}`;
-      
-      let embedding: number[] = [];
+
+      let embedding = null;
       try {
         const result = await embed({
           model: openrouter.embedding(MODELS.embedding),
@@ -259,35 +285,32 @@ export async function GET() {
         });
         embedding = result.embedding;
       } catch (embedErr) {
-        console.warn(`[Seed] Could not embed "${pattern.pattern_name}":`, embedErr);
+        console.warn(`⚠️  Could not embed "${pattern.pattern_name}":`, embedErr);
       }
 
-      try {
-        await db.insert(vulnerabilityPatterns).values({
-          category: pattern.category,
-          language: pattern.language,
-          patternName: pattern.pattern_name,
-          description: pattern.description,
-          exampleCode: pattern.example_code || null,
-          fixSuggestion: pattern.fix_suggestion || null,
-          severity: pattern.severity,
-          embedding,
-        });
-        seeded++;
-      } catch (createErr) {
-        console.error(`[Seed] Failed to insert "${pattern.pattern_name}":`, createErr);
-      }
+      // Insert the pattern
+      await sql`
+        INSERT INTO vulnerability_patterns (
+          category, language, pattern_name, description,
+          example_code, fix_suggestion, severity, embedding
+        ) VALUES (
+          ${pattern.category}, ${pattern.language}, ${pattern.pattern_name},
+          ${pattern.description}, ${pattern.example_code}, ${pattern.fix_suggestion},
+          ${pattern.severity}, ${embedding ? JSON.stringify(embedding) : null}
+        )
+      `;
+
+      seeded++;
+      console.log(`✅ Seeded: ${pattern.pattern_name}`);
     }
 
-    return Response.json({
-      success: true,
-      message: `Seeded ${seeded} patterns, skipped ${skipped} existing.`,
-      total: VULNERABILITY_PATTERNS.length,
-    });
+    console.log(`🎉 Seeding completed! Seeded: ${seeded}, Skipped: ${skipped}, Total: ${VULNERABILITY_PATTERNS.length}`);
   } catch (error) {
-    return Response.json(
-      { success: false, error: String(error) },
-      { status: 500 },
-    );
+    console.error("❌ Seeding failed:", error);
+    process.exit(1);
+  } finally {
+    await sql.end();
   }
 }
+
+seedDatabase();

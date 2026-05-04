@@ -3,6 +3,31 @@ import { z } from "zod";
 import { openrouter, MODELS } from "@/lib/openrouter";
 import type { SpecialistOutput } from "@/lib/pipeline/specialist";
 
+// ─── Helper Functions ────────────────────────────────────────
+
+/**
+ * Sanitize string to ASCII-only to work around weak model limitations and
+ * to prevent HTTP header ByteString errors when strings pass through headers.
+ * Handles common Unicode punctuation with ASCII equivalents.
+ */
+function sanitizeToAscii(str: string): string {
+  return str
+    .replace(/\u2014/g, "-")    // em dash
+    .replace(/\u2013/g, "-")    // en dash
+    .replace(/\u2018/g, "'")    // left single quote
+    .replace(/\u2019/g, "'")    // right single quote
+    .replace(/\u201C/g, '"')    // left double quote
+    .replace(/\u201D/g, '"')    // right double quote
+    .replace(/\u2026/g, "...")  // ellipsis
+    .replace(/\u2192/g, "->")   // right arrow
+    .replace(/\u2190/g, "<-")   // left arrow
+    .replace(/\u2022/g, "*")    // bullet
+    .replace(/\u2122/g, "(TM)") // trademark
+    .replace(/\u00AE/g, "(R)")  // registered
+    .replace(/\u00A9/g, "(C)")  // copyright
+    .replace(/[^\x00-\x7F]/g, ""); // strip any remaining non-ASCII
+}
+
 // ─── Report Schema ────────────────────────────────────────────
 
 export const ReportSchema = z.object({
@@ -65,7 +90,7 @@ export async function runSynthesizer(
       highCount: 0,
       mediumCount: 0,
       lowCount: 0,
-      topPriority: "None — keep it up!",
+      topPriority: "None - keep it up!",
       categories: specialistOutputs.map((s) => ({
         name: s.category,
         issueCount: 0,
@@ -82,12 +107,14 @@ export async function runSynthesizer(
   const specialistSummary = specialistOutputs
     .map(
       (s) =>
-        `### ${s.category.toUpperCase()} (${s.issues.length} issues)\n${s.summary}\n` +
+        `### ${s.category.toUpperCase()} (${s.issues.length} issues)\n${sanitizeToAscii(s.summary)}\n` +
         s.issues
-          .map((i) => `- [${i.severity.toUpperCase()}] ${i.title}: ${i.description}`)
+          .map((i) => `- [${i.severity.toUpperCase()}] ${sanitizeToAscii(i.title)}: ${sanitizeToAscii(i.description)}`)
           .join("\n"),
     )
     .join("\n\n");
+
+  const sanitizedSpecialistSummary = sanitizeToAscii(specialistSummary);
 
   const FALLBACK: Report = {
     overallRisk: criticalCount > 0 ? "critical" : highCount > 0 ? "high" : mediumCount > 0 ? "medium" : "low",
@@ -110,21 +137,22 @@ export async function runSynthesizer(
   };
 
   try {
-    const { object } = await generateObject({
-      model: openrouter(MODELS.synthesizer),
-      schema: ReportSchema,
-      prompt: `You are a senior code review lead. You have received reports from specialist reviewers. 
+    const prompt = sanitizeToAscii(`You are a senior code review lead. You have received reports from specialist reviewers. 
 Synthesize them into a final, actionable code review report.
 
 ## Language: ${language}
 ## Code length: ${code.length} chars
 
 ## Specialist Reports:
-${specialistSummary}
+${sanitizedSpecialistSummary}
 
 Create a comprehensive final report. Be direct, specific, and actionable.
 For topPriority: pick the single most dangerous or impactful issue to fix first.
-For knownLimitations: be honest — what might static analysis miss here?`,
+For knownLimitations: be honest - what might static analysis miss here?`);
+    const { object } = await generateObject({
+      model: openrouter(MODELS.synthesizer),
+      schema: ReportSchema,
+      prompt,
       maxOutputTokens: 800,
     });
 

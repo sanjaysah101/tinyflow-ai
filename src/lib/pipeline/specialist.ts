@@ -49,7 +49,7 @@ const STATIC_CHECKS: StaticIssue[] = [
   },
   {
     pattern: /query\s*=\s*[`"'].*?\$\{|query\s*=\s*["'].*?\+\s*req|query\s*\+=.*?req|"SELECT.*?".*?\+|`SELECT[\s\S]*?\$\{[\s\S]*?req/i,
-    title: "SQL Injection — Dynamic Query with Request Data",
+    title: "SQL Injection - Dynamic Query with Request Data",
     description: "Request parameters (req.body, req.params, req.query) are interpolated directly into a SQL string.",
     severity: "critical",
     fix: "Replace with parameterized queries. Never put request data inside a SQL string.",
@@ -68,7 +68,7 @@ const STATIC_CHECKS: StaticIssue[] = [
     title: "Hardcoded Secret / Credential",
     description: "A secret, API key, or password is hardcoded in source code. It will be exposed in version control and to anyone with code access.",
     severity: "critical",
-    fix: "Move to environment variables: process.env.API_KEY — and add the real value to .env (gitignored).",
+    fix: "Move to environment variables: process.env.API_KEY and add the real value to .env (gitignored).",
     category: "security",
   },
   {
@@ -76,7 +76,7 @@ const STATIC_CHECKS: StaticIssue[] = [
     title: "Command Injection",
     description: "User-controlled data is interpolated into a shell exec() call. An attacker can append arbitrary shell commands.",
     severity: "critical",
-    fix: "Never pass user input to exec(). Use a safe API or sanitize/allowlist inputs strictly.",
+    fix: "Never pass user input to exec(). Use a safe API or sanitize and allowlist inputs strictly.",
     category: "security",
   },
   {
@@ -107,7 +107,7 @@ const STATIC_CHECKS: StaticIssue[] = [
   {
     pattern: /const\s+\w+\s*=\s*db\.(?:query|find|findOne|execute)\s*\([^)]*\)\s*;\s*(?!\s*await|\s*\.then)/,
     title: "Missing await on Async Database Call",
-    description: "A database call that returns a Promise is not being awaited. The variable will hold a Promise object, not the actual data — causing .rows, .data, etc. to be undefined.",
+    description: "A database call that returns a Promise is not being awaited. The variable will hold a Promise object, not the actual data - causing .rows, .data, etc. to be undefined.",
     severity: "critical",
     fix: "Add await before the database call: const result = await db.query(...)",
     category: "bugs",
@@ -123,7 +123,7 @@ const STATIC_CHECKS: StaticIssue[] = [
   // ── Performance ──
   {
     pattern: /for\s*\([^)]+\)[^{]*\{[^}]*for\s*\([^)]+\)/,
-    title: "O(n²) Nested Loop",
+    title: "O(n^2) Nested Loop",
     description: "A loop inside another loop on the same collection. For n=1000 users this runs 1,000,000 iterations instead of 1,000.",
     severity: "high",
     fix: "Use a Set or Map for O(n) lookups, or use a database query with a WHERE clause instead.",
@@ -132,7 +132,7 @@ const STATIC_CHECKS: StaticIssue[] = [
   {
     pattern: /(?:readFileSync|execSync|writeFileSync|existsSync)\s*\(/,
     title: "Synchronous / Blocking File System Operation",
-    description: "Synchronous fs operations block Node.js's event loop. While this runs, no other requests can be handled — causing severe latency spikes under load.",
+    description: "Synchronous fs operations block Node.js's event loop. While this runs, no other requests can be handled - causing severe latency spikes under load.",
     severity: "high",
     fix: "Use the async equivalent: await fs.promises.readFile(...) or await fs.promises.writeFile(...)",
     category: "performance",
@@ -147,8 +147,8 @@ const STATIC_CHECKS: StaticIssue[] = [
   },
   {
     pattern: /for\s*\([^)]+\)\s*\{[^}]*(?:await|\.then\s*\()/,
-    title: "Sequential Awaits Inside Loop (N+1 Pattern)",
-    description: "An async call (await or .then) is made inside a loop. Each iteration waits for the previous one, so N iterations = N sequential roundtrips instead of 1 batched call.",
+    title: "Sequential Awaits Inside Loop",
+    description: "An async call (await or .then) is made inside a loop. Each iteration waits for the previous one, causing N sequential operations instead of 1 batched call.",
     severity: "high",
     fix: "Collect all inputs first, then use Promise.all() for parallel execution, or batch with a single query.",
     category: "performance",
@@ -186,11 +186,11 @@ function runStaticChecks(code: string, category: "security" | "bugs" | "performa
 // ─── Category-specific AI checklists ─────────────────────────
 // Each is a CONCRETE yes/no checklist tailored for a tiny model.
 // We give the model examples of what the issue LOOKS LIKE,
-// so it only needs to recognize patterns — not reason from first principles.
+// so it only needs to recognize patterns - not reason from first principles.
 
 const CATEGORY_CHECKLISTS: Record<string, string> = {
   security: `
-CHECK EACH OF THE FOLLOWING — report anything you find:
+CHECK EACH OF THE FOLLOWING - report anything you find:
 
 1. SQL INJECTION: Does any SQL query string contain variables interpolated via \${} or + concatenation?
    BAD: \`SELECT * FROM users WHERE id = \${req.params.id}\`
@@ -205,69 +205,69 @@ CHECK EACH OF THE FOLLOWING — report anything you find:
    BAD: const PASSWORD = "admin123"
 
 4. MISSING AUTH: Are database queries run without checking if the user is authorized?
-   BAD: db.query("SELECT * FROM users WHERE id=" + req.params.id) — no ownership check
+   BAD: db.query("SELECT * FROM users WHERE id=" + req.params.id) - no ownership check
 
 5. ERROR LEAKING: Are raw error objects sent to the client?
-   BAD: res.send(err) — leaks stack trace and internal details
+   BAD: res.send(err) - leaks stack trace and internal details
 
 6. COMMAND INJECTION: Is user input passed to exec(), spawn(), or eval()?
 `,
 
   bugs: `
-CHECK EACH OF THE FOLLOWING — report anything you find:
+CHECK EACH OF THE FOLLOWING - report anything you find:
 
 1. MISSING AWAIT: Is a Promise-returning function called WITHOUT await?
-   BAD: const user = db.query("SELECT...")  ← missing await
+   BAD: const user = db.query("SELECT...")  <- missing await
    GOOD: const user = await db.query("SELECT...")
 
 2. OFF-BY-ONE: Does any loop use i <= array.length instead of i < array.length?
-   BAD: for (let i = 0; i <= arr.length; i++)  ← accesses arr[arr.length] = undefined
+   BAD: for (let i = 0; i <= arr.length; i++)  <- accesses arr[arr.length] = undefined
 
 3. UNHANDLED ASYNC ERRORS: Does an async function use await without a try/catch?
    BAD: async function load() { const data = await fetch(...); return data.json(); }
 
 4. NULL/UNDEFINED ACCESS: Is a property accessed on a value that could be null/undefined?
-   BAD: res.send(user.rows[0]) — if query returns 0 rows, user.rows[0] is undefined
+   BAD: res.send(user.rows[0]) - if query returns 0 rows, user.rows[0] is undefined
 
 5. MISSING ERROR HANDLER: Are catch blocks empty or missing?
-   BAD: catch(err) {} — silently swallowing errors
+   BAD: catch(err) {} - silently swallowing errors
 `,
 
   performance: `
-CHECK EACH OF THE FOLLOWING — report anything you find:
+CHECK EACH OF THE FOLLOWING - report anything you find:
 
 1. NESTED LOOPS ON SAME DATA: Is there a loop inside a loop iterating over the same collection?
-   BAD: for users { for users { if match... } } — this is O(n²)
+   BAD: for users { for users { if match... } } - this is O(n^2)
 
 2. SYNCHRONOUS I/O: Is readFileSync, writeFileSync, or execSync used in a server request handler?
-   BAD: fs.readFileSync('data.txt') — blocks all requests while reading
+   BAD: fs.readFileSync('data.txt') - blocks all requests while reading
 
 3. SELECT * WITHOUT LIMIT: Is "SELECT *" used without a WHERE clause on a large table?
-   BAD: db.query("SELECT * FROM users") — fetches all rows, unbounded
+   BAD: db.query("SELECT * FROM users") - fetches all rows, unbounded
 
 4. AWAIT IN A LOOP: Is an await call made inside a for/while loop?
    BAD: for (const id of ids) { const data = await db.query(...); }
    GOOD: await Promise.all(ids.map(id => db.query(...)))
 
 5. BLOCKING COMPUTE IN REQUEST: Is a CPU-intensive loop (like counting to 1e9) done synchronously?
-   BAD: for (let i = 0; i < 1e9; i++) { sum += i; } — blocks event loop
+   BAD: for (let i = 0; i < 1e9; i++) { sum += i; } - blocks event loop
 `,
 
   style: `
-CHECK EACH OF THE FOLLOWING — report anything you find:
+CHECK EACH OF THE FOLLOWING - report anything you find:
 
 1. MAGIC NUMBERS: Are unexplained numeric literals used? (Exception: 0, 1, -1 are okay)
-   BAD: if (status === 403) — what does 403 mean here? Use a named constant.
+   BAD: if (status === 403) - what does 403 mean here? Use a named constant.
 
 2. DEAD CODE: Are there commented-out code blocks or unreachable return statements?
 
 3. MISSING ERROR HANDLING IN CATCH: Does a catch block do nothing or just console.log without re-throwing?
-   BAD: catch(err) { console.log(err); }  — error is swallowed silently
+   BAD: catch(err) { console.log(err); }  - error is swallowed silently
 
 4. OVERLY LONG FUNCTION: Does any function exceed ~40 lines?
 
 5. INCONSISTENT ERROR RESPONSE FORMAT: Are errors sent with different formats?
-   BAD: res.send({ message: "ok" }) vs res.send(err) — inconsistent
+   BAD: res.send({ message: "ok" }) vs res.send(err) - inconsistent
 `,
 };
 
@@ -304,7 +304,7 @@ Do not say the code is safe if there is ANY problem. Err on the side of reportin
 
 ${ragContext ? `## Retrieved vulnerability patterns:\n${ragContext}\n` : ""}
 
-## ${category.toUpperCase()} CHECKLIST — go through each item:
+## ${category.toUpperCase()} CHECKLIST - go through each item:
 ${checklist}
 
 ## Code under review:
@@ -313,8 +313,8 @@ ${code.slice(0, 3000)}
 \`\`\`
 
 Find EVERY violation of the checklist above. 
-If you see SQL concatenation — report it. If you see hardcoded secrets — report them.
-If you see nested loops on the same data — report it.
+If you see SQL concatenation - report it. If you see hardcoded secrets - report them.
+If you see nested loops on the same data - report it.
 Do NOT say something is safe unless you carefully checked EVERY item and found nothing.
 
 Return JSON with ALL issues you found. Set safe=false if ANY issue exists.`;
@@ -345,7 +345,7 @@ Return JSON with ALL issues you found. Set safe=false if ANY issue exists.`;
       }
     }
   } catch {
-    // AI model failed — static issues still get reported
+    // AI model failed - static issues still get reported
   }
 
   // ── Merge: deduplicate static + AI issues by title ──
@@ -355,16 +355,26 @@ Return JSON with ALL issues you found. Set safe=false if ANY issue exists.`;
 
   const isSafe = mergedIssues.length === 0;
 
+  // Sanitize the summary to remove Unicode characters
+  const rawSummary = isSafe
+    ? `No ${category} issues detected.`
+    : `Found ${mergedIssues.length} ${category} issue(s): ${mergedIssues
+        .map((i) => i.title)
+        .slice(0, 2)
+        .join(", ")}${mergedIssues.length > 2 ? ` and ${mergedIssues.length - 2} more` : ""}.`;
+
+  const sanitizedSummary = rawSummary.replace(/[^\x00-\x7F]/g, '');
+
   return {
     category,
-    issues: mergedIssues,
+    issues: mergedIssues.map(issue => ({
+      ...issue,
+      title: issue.title.replace(/[^\x00-\x7F]/g, ''),
+      description: issue.description.replace(/[^\x00-\x7F]/g, ''),
+      fix: issue.fix.replace(/[^\x00-\x7F]/g, ''),
+    })),
     safe: isSafe,
-    summary: isSafe
-      ? `No ${category} issues detected.`
-      : `Found ${mergedIssues.length} ${category} issue(s): ${mergedIssues
-          .map((i) => i.title)
-          .slice(0, 2)
-          .join(", ")}${mergedIssues.length > 2 ? ` and ${mergedIssues.length - 2} more` : ""}.`,
+    summary: sanitizedSummary,
   };
 }
 
@@ -387,7 +397,7 @@ export async function runAllSpecialists(
       category: categories[i],
       issues: [],
       safe: false,
-      summary: `${categories[i]} analysis encountered an error — manual review recommended.`,
+      summary: `${categories[i]} analysis encountered an error - manual review recommended.`,
     };
   });
 }

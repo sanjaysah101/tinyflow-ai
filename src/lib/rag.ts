@@ -1,6 +1,7 @@
-import { createClient } from "@/utils/supabase/server";
+import { db, vulnerabilityPatterns } from "@/lib/db";
 import { openrouter, MODELS } from "@/lib/openrouter";
 import { embed } from "ai";
+import { and, eq, or } from "drizzle-orm";
 
 export interface VulnerabilityPattern {
   id: number;
@@ -25,9 +26,15 @@ export async function embedText(text: string): Promise<number[]> {
   return embedding;
 }
 
+function cosineSimilarity(a: number[], b: number[]): number {
+  const dot = a.reduce((sum, value, idx) => sum + value * (b[idx] ?? 0), 0);
+  const magA = Math.sqrt(a.reduce((sum, value) => sum + value * value, 0));
+  const magB = Math.sqrt(b.reduce((sum, value) => sum + value * value, 0));
+  return magA === 0 || magB === 0 ? 0 : dot / (magA * magB);
+}
+
 /**
- * Retrieve the most relevant vulnerability patterns from Supabase pgvector
- * for a given code snippet and category.
+ * Retrieve the most relevant vulnerability patterns from the database for a given code snippet and category.
  */
 export async function retrievePatterns(
   codeSnippet: string,
@@ -35,33 +42,50 @@ export async function retrievePatterns(
   language: string,
   topK = 4,
 ): Promise<VulnerabilityPattern[]> {
-  const supabase = await createClient();
-
   // Build a query string that combines the code context with the category
   const queryText = `${category} vulnerability in ${language} code: ${codeSnippet.slice(0, 500)}`;
 
-  let embedding: number[];
+  let queryEmbedding: number[];
   try {
-    embedding = await embedText(queryText);
+    queryEmbedding = await embedText(queryText);
   } catch {
-    // If embedding fails (rate limit), return empty — specialist will work without RAG context
     console.warn(`[RAG] Embedding failed for category ${category}, proceeding without context`);
     return [];
   }
 
-  const { data, error } = await supabase.rpc("match_vulnerability_patterns", {
-    query_embedding: embedding,
-    match_count: topK,
-    filter_category: category,
-    filter_language: language === "unknown" ? null : language,
-  });
+  const patterns = await db
+    .select()
+    .from(vulnerabilityPatterns)
+    .where(
+      and(
+        eq(vulnerabilityPatterns.category, category),
+        or(
+          eq(vulnerabilityPatterns.language, language),
+          eq(vulnerabilityPatterns.language, "any"),
+        ),
+      ),
+    );
 
-  if (error) {
-    console.error("[RAG] Supabase RPC error:", error.message);
-    return [];
-  }
+  const scored = patterns
+    .filter((pattern) => Array.isArray(pattern.embedding) && pattern.embedding.length > 0)
+    .map((pattern) => ({
+      ...pattern,
+      similarity: cosineSimilarity(queryEmbedding, pattern.embedding ?? []),
+    }))
+    .sort((a, b) => b.similarity - a.similarity)
+    .slice(0, topK);
 
-  return (data as VulnerabilityPattern[]) ?? [];
+  return scored.map((pattern) => ({
+    id: Number(pattern.id),
+    category: pattern.category ?? "unknown",
+    language: pattern.language ?? "unknown",
+    pattern_name: pattern.patternName ?? "unknown pattern",
+    description: pattern.description ?? "No description available.",
+    example_code: pattern.exampleCode ?? null,
+    fix_suggestion: pattern.fixSuggestion ?? null,
+    severity: pattern.severity ?? "medium",
+    similarity: pattern.similarity,
+  }));
 }
 
 /**

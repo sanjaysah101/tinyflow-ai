@@ -24,7 +24,7 @@ export type RouterOutput = z.infer<typeof RouterOutputSchema>;
 // ─── Router Function ─────────────────────────────────────────
 
 /**
- * Step 1: Route the code — detect language and pick review categories.
+ * Step 1: Route the code - detect language and pick review categories.
  * Uses the lightest model (1B) for this simple classification task.
  * Crucially, static heuristics run FIRST so the tiny model's failure
  * doesn't cause us to skip the security category on server code.
@@ -52,7 +52,7 @@ export async function runRouter(code: string): Promise<RouterOutput> {
 
   // ── Always check all 4 categories for backend / server code ──
   // A tiny 1B model might skip "security" for code that has obvious SQLi.
-  // We override it here based on code patterns — much more reliable.
+  // We override it here based on code patterns - much more reliable.
   const hasServerPatterns = /express|fastify|koa|http\.createServer|app\.listen|req\.|res\.|\.query\s*\(|\.execute\s*\(|db\.|fetch\s*\(|axios/.test(code);
   if (hasServerPatterns || (detectedLanguage !== "unknown" && detectedLanguage !== "sql")) {
     return {
