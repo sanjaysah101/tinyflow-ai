@@ -10,7 +10,6 @@ import {
   Lightbulb, Target,
 } from "lucide-react";
 import Link from "next/link";
-import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -118,12 +117,12 @@ const PIPELINE_STEPS: Array<{
   model: string;
   icon: React.ComponentType<{ className?: string }>;
 }> = [
-  { id: "routing",      label: "Route & Classify",    model: "llama-3.2-1b",          icon: Route        },
-  { id: "retrieving",   label: "RAG Retrieval",        model: "nomic-embed-text",       icon: Search       },
-  { id: "analyzing",    label: "Specialist Analysis",  model: "qwen-2.5-coder-1.5b",   icon: FlaskConical },
-  { id: "synthesizing", label: "Synthesize Report",    model: "phi-3-mini",             icon: Layers       },
-  { id: "done",         label: "Complete",             model: "",                       icon: CheckCircle2 },
-];
+    { id: "routing", label: "Route & Classify", model: "llama-3.2-1b", icon: Route },
+    { id: "retrieving", label: "RAG Retrieval", model: "nomic-embed-text", icon: Search },
+    { id: "analyzing", label: "Specialist Analysis", model: "qwen-2.5-coder-1.5b", icon: FlaskConical },
+    { id: "synthesizing", label: "Synthesize Report", model: "phi-3-mini", icon: Layers },
+    { id: "done", label: "Complete", model: "", icon: CheckCircle2 },
+  ];
 
 function getStepStatus(stepId: string, currentStep: PipelineStep, completedSteps: string[]) {
   if (completedSteps.includes(stepId)) return "done";
@@ -420,22 +419,20 @@ export default function AppPage() {
                       <div key={step.id} className="flex items-center gap-3 py-1">
                         {/* Icon + connector */}
                         <div className="relative flex flex-col items-center">
-                          <div className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 border transition-all ${
-                            status === "done"
-                              ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-400"
-                              : status === "active"
+                          <div className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 border transition-all ${status === "done"
+                            ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-400"
+                            : status === "active"
                               ? "bg-indigo-500/20 border-indigo-500/40 text-indigo-400 animate-pulse"
                               : "bg-white/5 border-white/10 text-zinc-600"
-                          }`}>
+                            }`}>
                             {status === "done"
                               ? <Check className="w-3.5 h-3.5" />
                               : <StepIcon className="w-3.5 h-3.5" />
                             }
                           </div>
                           {i < PIPELINE_STEPS.length - 1 && (
-                            <div className={`w-px h-4 mt-1 transition-colors ${
-                              status === "done" ? "bg-emerald-500/30" : "bg-white/5"
-                            }`} />
+                            <div className={`w-px h-4 mt-1 transition-colors ${status === "done" ? "bg-emerald-500/30" : "bg-white/5"
+                              }`} />
                           )}
                         </div>
                         <div className="flex-1 min-w-0 pb-3">
@@ -575,15 +572,14 @@ export default function AppPage() {
                   className="flex flex-col gap-4"
                 >
                   {/* Overall risk banner */}
-                  <div className={`rounded-2xl p-5 border ${
-                    report.overallRisk === "clean"
-                      ? "bg-emerald-500/10 border-emerald-500/20"
-                      : report.overallRisk === "critical"
+                  <div className={`rounded-2xl p-5 border ${report.overallRisk === "clean"
+                    ? "bg-emerald-500/10 border-emerald-500/20"
+                    : report.overallRisk === "critical"
                       ? "bg-red-500/10 border-red-500/20"
                       : report.overallRisk === "high"
-                      ? "bg-orange-500/10 border-orange-500/20"
-                      : "bg-yellow-500/10 border-yellow-500/20"
-                  }`}>
+                        ? "bg-orange-500/10 border-orange-500/20"
+                        : "bg-yellow-500/10 border-yellow-500/20"
+                    }`}>
                     <div className="flex items-start gap-3">
                       <AlertTriangle className={`w-5 h-5 flex-shrink-0 mt-0.5 ${riskCfg?.color}`} />
                       <div className="flex-1 min-w-0">
@@ -627,13 +623,13 @@ export default function AppPage() {
                   </div>
 
                   {/* Category tabs */}
-                  <div className="bg-white/[0.02] border border-white/10 rounded-2xl overflow-hidden">
+                  <div className="bg-white/[0.02] border border-white/10 rounded-2xl overflow-y-auto">
                     <Tabs value={activeCategory} onValueChange={setActiveCategory} className="gap-0">
                       {/* Tab list */}
-                      <div className="border-b border-white/5 px-2 pt-2 pb-0">
+                      <div className="border-b border-white/5 px-2 pt-2 pb-0 overflow-x-auto">
                         <TabsList
                           variant="line"
-                          className="h-auto gap-0.5 flex-wrap pb-2 w-full justify-start"
+                          className="h-auto gap-0.5 flex-nowrap pb-2 w-max min-w-full justify-start"
                         >
                           {report.categories.map((cat) => {
                             const Icon = CATEGORY_ICONS[cat.name] ?? Code2;
@@ -647,9 +643,8 @@ export default function AppPage() {
                                 <Icon className="w-3.5 h-3.5" />
                                 <span className="capitalize">{cat.name}</span>
                                 {cat.issueCount > 0 && (
-                                  <span className={`text-[10px] rounded-full px-1.5 py-0 font-mono leading-4 ${
-                                    isActive ? "bg-indigo-500/30 text-indigo-300" : "bg-white/10 text-zinc-400"
-                                  }`}>
+                                  <span className={`text-[10px] rounded-full px-1.5 py-0 font-mono leading-4 ${isActive ? "bg-indigo-500/30 text-indigo-300" : "bg-white/10 text-zinc-400"
+                                    }`}>
                                     {cat.issueCount}
                                   </span>
                                 )}
