@@ -173,7 +173,7 @@ Code Input
 ## 🎥 2-Minute Demo + Known Failures
 
 ### Demo Video
-[📹 Link to 2-minute walkthrough video]
+[![TinyFlow AI Demo Video](https://img.youtube.com/vi/zfJ_bBc7cZc/maxresdefault.jpg)](https://youtu.be/zfJ_bBc7cZc "Watch the 2-minute walkthrough video on YouTube")
 
 ### ✅ What Works Well
 - SQL injection detection (static regex — near 100% catch rate)
