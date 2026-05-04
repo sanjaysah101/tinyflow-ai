@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Sparkles, Shield, Bug, Zap, Code2, ChevronRight,
   Copy, Check, AlertTriangle, Info, ArrowLeft,
-  Activity, Clock, DollarSign, Cpu
+  Activity, Clock, DollarSign, Cpu, History, RotateCcw
 } from "lucide-react";
 import Link from "next/link";
 
@@ -268,7 +268,7 @@ export default function AppPage() {
               } else if (currentEvent === "error") {
                 throw new Error(data.message);
               }
-            } catch (parseErr) {
+            } catch {
               // Skip malformed SSE data
             }
           }
@@ -280,6 +280,16 @@ export default function AppPage() {
     }
   }, [code]);
 
+  const handleNewAnalysis = useCallback(() => {
+    setReport(null);
+    setMetrics(null);
+    setError(null);
+    setCompletedSteps([]);
+    setPipelineStep("idle");
+    setStepMessage("");
+    setCode("");
+  }, []);
+
   const copyCode = () => {
     navigator.clipboard.writeText(code);
     setCopied(true);
@@ -288,6 +298,7 @@ export default function AppPage() {
 
   const activeReport = report?.categories.find((c) => c.name === activeCategory);
   const riskCfg = report ? RISK_CONFIG[report.overallRisk] : null;
+  const isRunning = pipelineStep !== "idle" && pipelineStep !== "done" && pipelineStep !== "error";
 
   return (
     <div className="min-h-screen bg-[#09090b] text-zinc-100 font-sans">
@@ -312,13 +323,22 @@ export default function AppPage() {
                 <Sparkles className="w-4 h-4 text-indigo-400" />
               </div>
               <span className="font-semibold text-white">TinyFlow AI</span>
-              <span className="text-xs text-zinc-500">— Code Oracle</span>
+              <span className="text-xs text-zinc-500 hidden sm:block">— Code Oracle</span>
             </div>
           </div>
-          <div className="hidden md:flex items-center gap-2 text-xs font-mono">
-            <span className="px-2 py-1 rounded-md bg-amber-500/10 border border-amber-500/20 text-amber-400">
-              Tier 1 Models Only (≤4B params)
-            </span>
+          <div className="flex items-center gap-3">
+            <Link
+              href="/app/history"
+              className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-white transition-colors px-3 py-1.5 rounded-lg hover:bg-white/5 border border-transparent hover:border-white/10"
+            >
+              <History className="w-3.5 h-3.5" />
+              <span className="hidden sm:block">History</span>
+            </Link>
+            <div className="hidden md:flex items-center gap-2 text-xs font-mono">
+              <span className="px-2 py-1 rounded-md bg-amber-500/10 border border-amber-500/20 text-amber-400">
+                Tier 1 (≤4B params) · $0.00
+              </span>
+            </div>
           </div>
         </header>
 
@@ -354,18 +374,31 @@ export default function AppPage() {
                 placeholder="Paste your code here…"
                 spellCheck={false}
               />
-              <div className="px-4 py-3 border-t border-white/5 bg-black/20 flex items-center justify-between">
+              <div className="px-4 py-3 border-t border-white/5 bg-black/20 flex items-center justify-between gap-2">
                 <span className="text-xs text-zinc-600 font-mono">{code.length} chars</span>
-                <motion.button
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                  onClick={handleAnalyze}
-                  disabled={pipelineStep !== "idle" && pipelineStep !== "done" && pipelineStep !== "error"}
-                  className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-indigo-900/30"
-                >
-                  <Sparkles className="w-4 h-4" />
-                  Analyze Code
-                </motion.button>
+                <div className="flex items-center gap-2">
+                  {(pipelineStep === "done" || pipelineStep === "error") && (
+                    <motion.button
+                      initial={{ opacity: 0, x: 10 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      onClick={handleNewAnalysis}
+                      className="flex items-center gap-1.5 px-4 py-2 bg-white/5 hover:bg-white/10 text-zinc-300 hover:text-white rounded-xl text-sm font-medium transition-colors border border-white/10"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      New
+                    </motion.button>
+                  )}
+                  <motion.button
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={handleAnalyze}
+                    disabled={isRunning}
+                    className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-indigo-900/30"
+                  >
+                    <Sparkles className="w-4 h-4" />
+                    Analyze Code
+                  </motion.button>
+                </div>
               </div>
             </div>
 
@@ -375,21 +408,29 @@ export default function AppPage() {
                 <Activity className="w-4 h-4 text-indigo-400" />
                 Live Pipeline
               </h3>
-              <div className="space-y-2">
+              <div className="space-y-1">
                 {PIPELINE_STEPS.map((step, i) => {
                   const status = getStepStatus(step.id, pipelineStep, completedSteps);
                   return (
-                    <div key={step.id} className="flex items-center gap-3">
-                      <div className={`w-7 h-7 rounded-full flex items-center justify-center text-sm flex-shrink-0 border transition-all ${
-                        status === "done"
-                          ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-400"
-                          : status === "active"
-                          ? "bg-indigo-500/20 border-indigo-500/40 text-indigo-400 animate-pulse"
-                          : "bg-white/5 border-white/10 text-zinc-600"
-                      }`}>
-                        {status === "done" ? "✓" : step.icon}
+                    <div key={step.id} className="flex items-center gap-3 py-1">
+                      {/* Connector line */}
+                      <div className="relative flex flex-col items-center">
+                        <div className={`w-7 h-7 rounded-full flex items-center justify-center text-sm flex-shrink-0 border transition-all ${
+                          status === "done"
+                            ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-400"
+                            : status === "active"
+                            ? "bg-indigo-500/20 border-indigo-500/40 text-indigo-400 animate-pulse"
+                            : "bg-white/5 border-white/10 text-zinc-600"
+                        }`}>
+                          {status === "done" ? "✓" : step.icon}
+                        </div>
+                        {i < PIPELINE_STEPS.length - 1 && (
+                          <div className={`w-px h-4 mt-1 transition-colors ${
+                            status === "done" ? "bg-emerald-500/30" : "bg-white/5"
+                          }`} />
+                        )}
                       </div>
-                      <div className="flex-1 min-w-0">
+                      <div className="flex-1 min-w-0 pb-3">
                         <p className={`text-sm font-medium ${status === "pending" ? "text-zinc-600" : "text-white"}`}>
                           {step.label}
                         </p>
@@ -400,7 +441,7 @@ export default function AppPage() {
                         )}
                       </div>
                       {status === "active" && (
-                        <div className="flex gap-1">
+                        <div className="flex gap-1 pb-3">
                           {[0, 1, 2].map((j) => (
                             <div key={j} className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: `${j * 100}ms` }} />
                           ))}
@@ -412,13 +453,13 @@ export default function AppPage() {
               </div>
 
               {stepMessage && pipelineStep !== "idle" && (
-                <div className="mt-4 pt-4 border-t border-white/5">
+                <div className="mt-2 pt-3 border-t border-white/5">
                   <p className="text-xs text-indigo-300">{stepMessage}</p>
                 </div>
               )}
 
               {error && (
-                <div className="mt-4 pt-4 border-t border-white/5">
+                <div className="mt-3 pt-3 border-t border-white/5">
                   <p className="text-xs text-red-400">{error}</p>
                 </div>
               )}
@@ -464,6 +505,15 @@ export default function AppPage() {
                     <span className="text-amber-400 font-mono">{metrics.tier}</span>
                   </div>
                 </div>
+                <div className="mt-3 pt-3 border-t border-white/5">
+                  <Link
+                    href="/app/history"
+                    className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-indigo-400 transition-colors"
+                  >
+                    <History className="w-3 h-3" />
+                    View all past analyses →
+                  </Link>
+                </div>
               </motion.div>
             )}
           </div>
@@ -479,10 +529,23 @@ export default function AppPage() {
                 <p className="text-sm text-zinc-400 max-w-xs leading-relaxed">
                   Paste your code on the left and click Analyze. Three tiny models (1B, 1.5B, 3.8B) will review it in parallel.
                 </p>
+                <div className="mt-6 grid grid-cols-2 gap-3 w-full max-w-xs">
+                  {[
+                    { icon: <Shield className="w-4 h-4" />, label: "Security", color: "text-red-400" },
+                    { icon: <Bug className="w-4 h-4" />, label: "Bugs", color: "text-orange-400" },
+                    { icon: <Zap className="w-4 h-4" />, label: "Performance", color: "text-yellow-400" },
+                    { icon: <Code2 className="w-4 h-4" />, label: "Style", color: "text-blue-400" },
+                  ].map((c) => (
+                    <div key={c.label} className={`flex items-center gap-2 text-xs bg-white/[0.02] border border-white/8 rounded-lg px-3 py-2 ${c.color}`}>
+                      {c.icon}
+                      <span className="text-zinc-400">{c.label}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
 
-            {(pipelineStep !== "idle" && pipelineStep !== "done" && pipelineStep !== "error") && (
+            {isRunning && (
               <div className="flex-1 flex flex-col items-center justify-center bg-white/[0.02] border border-white/10 rounded-2xl p-10 text-center">
                 <div className="w-16 h-16 rounded-full border-2 border-indigo-500/30 border-t-indigo-400 animate-spin mb-6" />
                 <p className="text-white font-medium">{stepMessage}</p>

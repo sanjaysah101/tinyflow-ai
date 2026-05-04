@@ -82,15 +82,31 @@ const STATS = [
   { label: "Model Size", value: "≤ 4B", sub: "Tier 1 Only" },
   { label: "Cost per Review", value: "$0.00", sub: "Free tier models" },
   { label: "Pipeline Steps", value: "5", sub: "Fully automated" },
-  { label: "Categories Checked", value: "4", sub: "Security, Bugs, Perf, Style" },
+  { label: "Categories Checked", value: "4", sub: "Security · Bugs · Perf · Style" },
 ];
 
-const WOW_GAP = [
-  { what: "Raw 1B model", result: "Rambling, inconsistent, misses critical SQLi" },
-  { what: "TinyFlow 1B + scaffold", result: "Precise, structured, cites the exact vulnerable line" },
-];
+// ─── Wow Gap data with code examples ─────────────────────────
 
-// ─── Landing Page ─────────────────────────────────────────────────────────────
+const WOW_BEFORE = `// Raw 1B model — asked "review my code for security"
+// Actual output:
+"The code looks mostly fine. You might want to add
+ some comments and consider using const instead of
+ let where possible. The function is a bit long but
+ overall it seems okay."
+// Missed: SQL injection, XSS, hardcoded secrets.`;
+
+const WOW_AFTER = `// TinyFlow 1B + engineering scaffold
+// Same model. Different scaffolding.
+{
+  "severity": "critical",
+  "title": "SQL Injection via String Concatenation",
+  "line": 3,
+  "fix": "Use parameterized queries: db.query(
+    'SELECT * FROM users WHERE id = $1', [userId])"
+}
+// + 6 more issues found across 4 categories.`;
+
+// ─── Landing Page ─────────────────────────────────────────────
 
 export default function LandingPage() {
   return (
@@ -112,6 +128,17 @@ export default function LandingPage() {
           </div>
           <div className="flex items-center gap-3">
             <span className="hidden md:block text-xs text-zinc-500 font-mono">Garage Inference 2026</span>
+            <a
+              href="https://github.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hidden sm:flex items-center gap-1.5 text-xs text-zinc-500 hover:text-white transition-colors px-3 py-1.5 rounded-lg hover:bg-white/5 border border-transparent hover:border-white/10"
+            >
+              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <path fillRule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" clipRule="evenodd" />
+              </svg>
+              GitHub
+            </a>
             <Link
               href="/app"
               className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-medium transition-colors"
@@ -124,7 +151,7 @@ export default function LandingPage() {
         {/* ── Hero ── */}
         <section className="max-w-5xl mx-auto px-6 pt-24 pb-20 text-center">
           <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs font-mono mb-8">
-            🏆 Garage Inference 2026 · Tier 1 Submission
+            🏆 Garage Inference 2026 · Tier 1 Submission · $0.00 / analysis
           </div>
           <h1 className="text-5xl md:text-7xl font-bold tracking-tight text-white mb-6 leading-[1.05]">
             Enterprise code review.
@@ -167,29 +194,53 @@ export default function LandingPage() {
         {/* ── The Wow Gap ── */}
         <section className="max-w-5xl mx-auto px-6 py-20 border-t border-white/5">
           <div className="text-center mb-12">
-            <span className="text-xs font-mono text-indigo-400 tracking-widest uppercase">The Whole Point</span>
+            <span className="text-xs font-mono text-indigo-400 tracking-widest uppercase">The Core Metric — 30% of judging score</span>
             <h2 className="text-4xl font-bold text-white mt-3">The Wow Gap</h2>
             <p className="text-zinc-400 mt-4 max-w-xl mx-auto">
               The same 1B model. Radically different outcomes. Engineering is the multiplier.
             </p>
           </div>
-          <div className="grid md:grid-cols-2 gap-6">
-            <div className="bg-red-500/5 border border-red-500/15 rounded-2xl p-6">
-              <div className="flex items-center gap-2 mb-4">
+
+          {/* Code block comparison */}
+          <div className="grid md:grid-cols-2 gap-4 mb-6">
+            <div className="flex flex-col gap-3">
+              <div className="flex items-center gap-2">
                 <div className="w-2 h-2 rounded-full bg-red-400" />
-                <span className="text-sm font-medium text-red-400">{WOW_GAP[0].what}</span>
+                <span className="text-sm font-medium text-red-400">Raw 1B model — no scaffolding</span>
               </div>
-              <p className="text-zinc-400 text-sm leading-relaxed">&ldquo;{WOW_GAP[0].result}&rdquo;</p>
+              <div className="bg-red-500/5 border border-red-500/15 rounded-2xl overflow-hidden">
+                <div className="flex items-center gap-2 px-4 py-2 bg-black/20 border-b border-red-500/10">
+                  <div className="flex gap-1.5">
+                    <div className="w-2.5 h-2.5 rounded-full bg-red-500/40" />
+                    <div className="w-2.5 h-2.5 rounded-full bg-yellow-500/40" />
+                    <div className="w-2.5 h-2.5 rounded-full bg-green-500/40" />
+                  </div>
+                  <span className="text-xs text-zinc-600 font-mono">raw-output.txt</span>
+                </div>
+                <pre className="p-5 text-xs font-mono text-zinc-400 leading-relaxed overflow-x-auto whitespace-pre-wrap">{WOW_BEFORE}</pre>
+              </div>
             </div>
-            <div className="bg-emerald-500/5 border border-emerald-500/15 rounded-2xl p-6">
-              <div className="flex items-center gap-2 mb-4">
+
+            <div className="flex flex-col gap-3">
+              <div className="flex items-center gap-2">
                 <div className="w-2 h-2 rounded-full bg-emerald-400" />
-                <span className="text-sm font-medium text-emerald-400">{WOW_GAP[1].what}</span>
+                <span className="text-sm font-medium text-emerald-400">TinyFlow 1B + engineering scaffold</span>
               </div>
-              <p className="text-zinc-400 text-sm leading-relaxed">&ldquo;{WOW_GAP[1].result}&rdquo;</p>
+              <div className="bg-emerald-500/5 border border-emerald-500/15 rounded-2xl overflow-hidden">
+                <div className="flex items-center gap-2 px-4 py-2 bg-black/20 border-b border-emerald-500/10">
+                  <div className="flex gap-1.5">
+                    <div className="w-2.5 h-2.5 rounded-full bg-red-500/40" />
+                    <div className="w-2.5 h-2.5 rounded-full bg-yellow-500/40" />
+                    <div className="w-2.5 h-2.5 rounded-full bg-green-500/40" />
+                  </div>
+                  <span className="text-xs text-zinc-600 font-mono">tinyflow-output.json</span>
+                </div>
+                <pre className="p-5 text-xs font-mono text-zinc-400 leading-relaxed overflow-x-auto whitespace-pre-wrap">{WOW_AFTER}</pre>
+              </div>
             </div>
           </div>
-          <div className="mt-8 bg-white/[0.02] border border-white/10 rounded-2xl p-6 text-center">
+
+          <div className="bg-white/[0.02] border border-white/10 rounded-2xl p-6 text-center">
             <p className="text-zinc-400 text-sm">
               The key insight:{" "}
               <span className="text-white font-medium">
@@ -210,7 +261,7 @@ export default function LandingPage() {
             </p>
           </div>
           <div className="grid md:grid-cols-3 gap-6">
-            {MODELS.map((m, i) => (
+            {MODELS.map((m) => (
               <div
                 key={m.name}
                 className={`bg-gradient-to-b ${m.color} border ${m.border} rounded-2xl p-6 flex flex-col gap-3`}
@@ -242,7 +293,7 @@ export default function LandingPage() {
               Five steps. Three models. One powerful pipeline built around the model&apos;s limitations, not despite them.
             </p>
           </div>
-          <div className="space-y-4">
+          <div className="space-y-3">
             {STEPS.map((step, i) => (
               <div
                 key={step.num}
@@ -312,20 +363,45 @@ export default function LandingPage() {
             No API key required. No sign up. Paste your code and watch three models smaller than your phone&apos;s camera app
             find real bugs in seconds.
           </p>
-          <Link
-            href="/app"
-            className="inline-flex items-center gap-2 px-10 py-5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl font-semibold text-xl transition-all hover:scale-105 shadow-2xl shadow-indigo-900/40"
-          >
-            ✨ Start Analyzing Code
-          </Link>
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+            <Link
+              href="/app"
+              className="inline-flex items-center gap-2 px-10 py-5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl font-semibold text-xl transition-all hover:scale-105 shadow-2xl shadow-indigo-900/40"
+            >
+              ✨ Start Analyzing Code
+            </Link>
+            <Link
+              href="/app/history"
+              className="inline-flex items-center gap-2 px-8 py-4 bg-white/5 hover:bg-white/10 text-zinc-300 rounded-2xl font-medium text-lg transition-colors border border-white/10"
+            >
+              📊 View Analysis History
+            </Link>
+          </div>
         </section>
 
         {/* ── Footer ── */}
-        <footer className="border-t border-white/5 py-8 text-center text-xs text-zinc-600 font-mono">
-          <p>TinyFlow AI · Garage Inference 2026 · Open Source · Tier 1 (≤4B params)</p>
-          <p className="mt-1">
-            Models: Llama 3.2 1B · Qwen 2.5 Coder 1.5B · Phi-3 Mini 3.8B · Nomic Embed · All via OpenRouter
-          </p>
+        <footer className="border-t border-white/5 py-8">
+          <div className="max-w-5xl mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-4 text-xs text-zinc-600 font-mono">
+            <div className="text-center md:text-left">
+              <p>TinyFlow AI · Garage Inference 2026 · Open Source · Tier 1 (≤4B params)</p>
+              <p className="mt-1">Models: Llama 3.2 1B · Qwen 2.5 Coder 1.5B · Phi-3 Mini 3.8B · All via OpenRouter free tier</p>
+            </div>
+            <div className="flex items-center gap-4">
+              <a
+                href="https://github.com"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1.5 hover:text-white transition-colors"
+              >
+                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                  <path fillRule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" clipRule="evenodd" />
+                </svg>
+                GitHub
+              </a>
+              <Link href="/app" className="hover:text-white transition-colors">Try Demo</Link>
+              <Link href="/app/history" className="hover:text-white transition-colors">History</Link>
+            </div>
+          </div>
         </footer>
       </div>
     </div>
