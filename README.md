@@ -29,7 +29,7 @@ The key insight: a 1B model that hallucinates on "review my code" becomes **prec
 ### One-Command Setup
 
 ```bash
-git clone <your-repo-url>
+git clone https://github.com/sanjaysah101/tinyflow-ai
 cd tinyflow-ai
 pnpm install
 cp .env.example .env   # fill in your keys

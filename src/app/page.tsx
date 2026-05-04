@@ -129,7 +129,7 @@ export default function LandingPage() {
           <div className="flex items-center gap-3">
             <span className="hidden md:block text-xs text-zinc-500 font-mono">Garage Inference 2026</span>
             <a
-              href="https://github.com"
+              href="https://github.com/sanjaysah101/tinyflow-ai"
               target="_blank"
               rel="noopener noreferrer"
               className="hidden sm:flex items-center gap-1.5 text-xs text-zinc-500 hover:text-white transition-colors px-3 py-1.5 rounded-lg hover:bg-white/5 border border-transparent hover:border-white/10"
@@ -388,7 +388,7 @@ export default function LandingPage() {
             </div>
             <div className="flex items-center gap-4">
               <a
-                href="https://github.com"
+                href="https://github.com/sanjaysah101/tinyflow-ai"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="flex items-center gap-1.5 hover:text-white transition-colors"
@@ -398,7 +398,6 @@ export default function LandingPage() {
                 </svg>
                 GitHub
               </a>
-              <Link href="/app" className="hover:text-white transition-colors">Try Demo</Link>
               <Link href="/app/history" className="hover:text-white transition-colors">History</Link>
             </div>
           </div>

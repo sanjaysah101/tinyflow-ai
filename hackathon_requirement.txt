@@ -179,7 +179,7 @@ access from model output. Clear threat model.
 > The tier system is a lens, not a multiplier. Same score, lower tier wins.
 
 ## BEFORE YOU START — RIGHT NOW
-
+    
 Answer these four questions before you write a single line of code:
 
 ### 1 What's my model?
