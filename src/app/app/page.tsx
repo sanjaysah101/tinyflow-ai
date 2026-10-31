@@ -976,7 +976,14 @@ export default function AppPage() {
           {/* BYOK Configuration Modal */}
           <AnimatePresence>
             {byokModalOpen && (
-              <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+              <div
+                role="dialog"
+                aria-modal="true"
+                onClick={(e) => {
+                  if (e.target === e.currentTarget) setByokModalOpen(false);
+                }}
+                className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"
+              >
                 <motion.div
                   initial={{ opacity: 0, scale: 0.95 }}
                   animate={{ opacity: 1, scale: 1 }}
@@ -997,6 +1004,7 @@ export default function AppPage() {
                     </div>
                     <button
                       type="button"
+                      aria-label="Close modal"
                       onClick={() => setByokModalOpen(false)}
                       className="p-1 rounded-lg text-zinc-400 hover:text-white hover:bg-white/10 transition-colors"
                     >

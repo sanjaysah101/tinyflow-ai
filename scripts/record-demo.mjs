@@ -10,13 +10,20 @@
  *  - ffmpeg to merge video + audio into final MP4
  *
  * Usage:
+ *   pnpm record-demo
  *   node scripts/record-demo.mjs [--base-url http://localhost:3000]
  *
  * Output: public/demo-mozfest-2026.mp4
  */
 
 import { execSync, spawn } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, unlinkSync } from "node:fs";
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  unlinkSync,
+} from "node:fs";
 import { writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -28,13 +35,20 @@ const PROJECT_ROOT = resolve(import.meta.dirname, "..");
 const TEMP_DIR = join(PROJECT_ROOT, ".demo-tmp");
 const OUTPUT_PATH = join(PROJECT_ROOT, "public", "demo-mozfest-2026.mp4");
 
-const BASE_URL =
-  process.argv.find((a) => a.startsWith("--base-url"))?.split("=")[1] ||
-  process.argv[process.argv.indexOf("--base-url") + 1] ||
-  "http://localhost:3000";
+function getBaseUrl() {
+  const inline = process.argv.find((a) => a.startsWith("--base-url="));
+  if (inline) return inline.split("=")[1].trim();
+  const idx = process.argv.indexOf("--base-url");
+  if (idx !== -1 && process.argv[idx + 1]) {
+    return process.argv[idx + 1].trim();
+  }
+  return "http://localhost:3000";
+}
+
+const BASE_URL = getBaseUrl();
 
 const TTS_VOICE = "en-US-AndrewMultilingualNeural";
-const TTS_RATE = "+5%"; // Slightly faster for professional pacing
+const TTS_RATE = "+5%"; // Professional, clear presentation pacing
 const VIDEO_WIDTH = 1920;
 const VIDEO_HEIGHT = 1080;
 
@@ -60,6 +74,37 @@ function getBrowserExecutable() {
     if (existsSync(c)) return c;
   }
   return undefined;
+}
+
+/** Ensure Playwright has its video-recording ffmpeg dependency */
+function ensurePlaywrightFfmpeg() {
+  const playwrightDir = join(
+    process.env.LOCALAPPDATA || "",
+    "ms-playwright",
+    "ffmpeg-1013",
+  );
+  const targetFfmpeg = join(playwrightDir, "ffmpeg-win64.exe");
+  if (!existsSync(targetFfmpeg)) {
+    try {
+      console.log("  📦 Auto-installing Playwright ffmpeg dependency...");
+      execSync("pnpm exec playwright install ffmpeg", {
+        stdio: "inherit",
+        timeout: 90_000,
+      });
+    } catch {
+      try {
+        mkdirSync(playwrightDir, { recursive: true });
+        const systemFfmpeg = execSync("where ffmpeg", { encoding: "utf8" })
+          .split("\r\n")[0]
+          ?.trim();
+        if (systemFfmpeg && existsSync(systemFfmpeg)) {
+          copyFileSync(systemFfmpeg, targetFfmpeg);
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+  }
 }
 
 // ─── Narration Scenes ───────────────────────────────────────────
@@ -161,7 +206,7 @@ async function ensureServerRunning(url) {
   }
 
   if (url.includes("localhost") || url.includes("127.0.0.1")) {
-    console.log(`  🚀 Starting local server at ${url}...`);
+    console.log(`  🚀 Starting Next.js local server at ${url}...`);
     const serverProcess = spawn("pnpm", ["dev"], {
       cwd: PROJECT_ROOT,
       shell: true,
@@ -186,17 +231,6 @@ async function ensureServerRunning(url) {
     return serverProcess;
   }
   return null;
-}
-
-/** Wait for a specific selector to appear on page */
-async function waitFor(page, selector, timeoutMs = 15000) {
-  try {
-    await page.waitForSelector(selector, { timeout: timeoutMs });
-  } catch {
-    console.warn(
-      `    ⏭️  Selector "${selector}" not found within ${timeoutMs}ms, continuing...`,
-    );
-  }
 }
 
 /** Smooth scroll to bottom of page */
@@ -255,13 +289,18 @@ async function runScene2(page, durationMs) {
     // Close the modal
     const closeBtn = page
       .locator(
-        '[role="dialog"] button:has-text("Cancel"), [role="dialog"] button:has-text("Close"), [role="dialog"] button:has-text("×")',
+        'button[aria-label="Close modal"], button:has-text("Save Configuration"), button:has-text("Close")',
       )
       .first();
     if (await closeBtn.isVisible().catch(() => false)) {
       await closeBtn.click();
     } else {
-      await page.keyboard.press("Escape");
+      await page.evaluate(() => {
+        const btn =
+          document.querySelector('button[aria-label="Close modal"]') ||
+          document.querySelector(".fixed.inset-0 button");
+        if (btn) btn.click();
+      });
     }
     await sleep(1500);
   }
@@ -272,6 +311,15 @@ async function runScene2(page, durationMs) {
 
 async function runScene3(page, durationMs) {
   console.log("  🎬 Scene 3: Live pipeline & guardrails...");
+
+  // Ensure any lingering dialog is closed
+  await page.evaluate(() => {
+    const closeBtn =
+      document.querySelector('button[aria-label="Close modal"]') ||
+      document.querySelector(".fixed.inset-0 button");
+    if (closeBtn) closeBtn.click();
+  });
+  await sleep(1000);
 
   const url = page.url();
   if (!url.includes("/app")) {
@@ -285,7 +333,7 @@ async function runScene3(page, durationMs) {
   // Click Analyze Code button
   const analyzeBtn = page.locator('button:has-text("Analyze")').first();
   if (await analyzeBtn.isVisible().catch(() => false)) {
-    await analyzeBtn.click();
+    await analyzeBtn.click({ force: true });
     console.log("    ▶ Analysis started...");
   }
 
@@ -296,8 +344,15 @@ async function runScene3(page, durationMs) {
   await page.evaluate(() => window.scrollTo({ top: 400, behavior: "smooth" }));
   await sleep(3000);
 
-  // Wait for analysis to finish (look for guardrail indicator)
-  await waitFor(page, "text=GUARDRAIL", 25000);
+  // Wait for analysis to finish (look for guardrail indicator or results)
+  try {
+    await page.waitForSelector(
+      "text=Guardrails Triggered, text=threats redacted, text=Overall Risk, text=Synthesized, text=Analysis complete",
+      { timeout: 35000 },
+    );
+  } catch {
+    console.log("    ⏳ Pipeline still streaming, continuing scene...");
+  }
   await sleep(2000);
 
   // Scroll down to show guardrail banner
@@ -319,7 +374,7 @@ async function runScene4(page, durationMs) {
     .locator('button:has-text("Security"), [role="tab"]:has-text("security")')
     .first();
   if (await securityTab.isVisible().catch(() => false)) {
-    await securityTab.click();
+    await securityTab.click({ force: true });
     await sleep(2500);
   }
 
@@ -339,7 +394,7 @@ async function runScene4(page, durationMs) {
     .locator('button:has-text("Bugs"), [role="tab"]:has-text("bugs")')
     .first();
   if (await bugsTab.isVisible().catch(() => false)) {
-    await bugsTab.click();
+    await bugsTab.click({ force: true });
     await sleep(2500);
   }
 
@@ -356,7 +411,7 @@ async function runScene4(page, durationMs) {
     .filter({ hasText: "Sandbox" })
     .first();
   if (await bugIssue.isVisible().catch(() => false)) {
-    await bugIssue.click();
+    await bugIssue.click({ force: true });
     await sleep(3000);
   }
 
@@ -371,21 +426,21 @@ async function runScene4(page, durationMs) {
     )
     .first();
   if (await fallbackBtn.isVisible().catch(() => false)) {
-    await fallbackBtn.click();
+    await fallbackBtn.click({ force: true });
     await sleep(2000);
   }
 
   // Click Test 429 Lock
   const lockBtn = page.locator('button:has-text("Test 429")').first();
   if (await lockBtn.isVisible().catch(() => false)) {
-    await lockBtn.click();
+    await lockBtn.click({ force: true });
     await sleep(2500);
   }
 
   // Reset budget
   const resetBtn = page.locator('button:has-text("Reset")').first();
   if (await resetBtn.isVisible().catch(() => false)) {
-    await resetBtn.click();
+    await resetBtn.click({ force: true });
     await sleep(1000);
   }
 
@@ -421,6 +476,9 @@ async function main() {
   ensureDir(TEMP_DIR);
   cleanDir(TEMP_DIR);
   ensureDir(join(PROJECT_ROOT, "public"));
+
+  // Ensure Playwright video ffmpeg binary exists
+  ensurePlaywrightFfmpeg();
 
   // Check and ensure server is running
   const spawnedServer = await ensureServerRunning(BASE_URL);
@@ -545,7 +603,7 @@ async function main() {
       "ffmpeg -y",
       `-i "${videoPath}"`,
       `-i "${fullAudioPath}"`,
-      "-c:v libx264 -preset fast -crf 22 -pix_fmt yuv420p",
+      "-c:v libx264 -preset veryfast -crf 20 -pix_fmt yuv420p",
       "-c:a aac -b:a 192k",
       "-map 0:v:0 -map 1:a:0",
       "-shortest",
