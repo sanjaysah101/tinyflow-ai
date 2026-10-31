@@ -1,6 +1,6 @@
-import { db, analysisHistory } from "@/lib/db";
 import { desc } from "drizzle-orm";
-import { NextRequest } from "next/server";
+import type { NextRequest } from "next/server";
+import { analysisHistory, db } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 

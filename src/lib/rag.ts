@@ -1,7 +1,7 @@
-import { db, vulnerabilityPatterns } from "@/lib/db";
-import { openrouter, MODELS } from "@/lib/openrouter";
 import { embed } from "ai";
 import { and, eq, or } from "drizzle-orm";
+import { db, vulnerabilityPatterns } from "@/lib/db";
+import { MODELS, openrouter } from "@/lib/openrouter";
 
 export interface VulnerabilityPattern {
   id: number;
@@ -49,7 +49,9 @@ export async function retrievePatterns(
   try {
     queryEmbedding = await embedText(queryText);
   } catch {
-    console.warn(`[RAG] Embedding failed for category ${category}, proceeding without context`);
+    console.warn(
+      `[RAG] Embedding failed for category ${category}, proceeding without context`,
+    );
     return [];
   }
 
@@ -67,7 +69,10 @@ export async function retrievePatterns(
     );
 
   const scored = patterns
-    .filter((pattern) => Array.isArray(pattern.embedding) && pattern.embedding.length > 0)
+    .filter(
+      (pattern) =>
+        Array.isArray(pattern.embedding) && pattern.embedding.length > 0,
+    )
     .map((pattern) => ({
       ...pattern,
       similarity: cosineSimilarity(queryEmbedding, pattern.embedding ?? []),
@@ -91,7 +96,9 @@ export async function retrievePatterns(
 /**
  * Format retrieved patterns into a concise context block for the specialist prompt.
  */
-export function formatPatternsAsContext(patterns: VulnerabilityPattern[]): string {
+export function formatPatternsAsContext(
+  patterns: VulnerabilityPattern[],
+): string {
   if (patterns.length === 0) {
     return "No specific patterns retrieved. Rely on your training knowledge.";
   }

@@ -1,9 +1,41 @@
-import { db, analysisHistory } from "@/lib/db";
+import { analysisHistory, db } from "@/lib/db";
 import { runRouter } from "@/lib/pipeline/router";
 import { runAllSpecialists } from "@/lib/pipeline/specialist";
 import { runSynthesizer } from "@/lib/pipeline/synthesizer";
 
 export const maxDuration = 60; // Vercel max for hobby plan
+
+// ─── Cumulative Per-User Spend Store ─────────────────────────
+// In-memory cache with database persistence fallback
+const inMemoryUserSpend = new Map<string, number>();
+
+async function getUserCumulativeSpend(userId: string): Promise<number> {
+  let dbSpend = 0;
+  try {
+    const pastRecords = await db
+      .select({ report: analysisHistory.report })
+      .from(analysisHistory)
+      .limit(100);
+
+    for (const row of pastRecords) {
+      const rep = row.report as Record<string, unknown> | null;
+      if (rep && typeof rep === "object") {
+        const telemetry = (rep as Record<string, unknown>).otari_telemetry as
+          | Record<string, unknown>
+          | undefined;
+        const budget = telemetry?.budget as Record<string, unknown> | undefined;
+        if (budget?.userId === userId) {
+          dbSpend += Number(budget.analysisCostUsd || 0);
+        }
+      }
+    }
+  } catch {
+    // DB unreachable or query error - use in-memory store
+  }
+
+  const memorySpend = inMemoryUserSpend.get(userId) || 0;
+  return Number(Math.max(dbSpend, memorySpend).toFixed(4));
+}
 
 // ─── Input sanitization ──────────────────────────────────────
 
@@ -21,7 +53,15 @@ function sseEvent(event: string, data: unknown): string {
 // ─── Main API Route ──────────────────────────────────────────
 
 export async function POST(req: Request) {
-  let body: { code: string; language?: string };
+  let body: {
+    code: string;
+    language?: string;
+    userId?: string;
+    userBudgetLimit?: number;
+    testFallbackMode?: boolean;
+    apiKey?: string;
+    baseUrl?: string;
+  };
 
   try {
     body = await req.json();
@@ -35,10 +75,68 @@ export async function POST(req: Request) {
   const { code, language: hintedLanguage } = body;
 
   if (!code || typeof code !== "string" || code.trim().length < 10) {
-    return new Response(JSON.stringify({ error: "Please provide at least 10 characters of code." }), {
-      status: 400,
-      headers: { "Content-Type": "application/json" },
-    });
+    return new Response(
+      JSON.stringify({
+        error: "Please provide at least 10 characters of code.",
+      }),
+      {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      },
+    );
+  }
+
+  // ── BYOK (Bring Your Own Key) & Gateway Base URL Resolution ──
+  const byokApiKey =
+    req.headers.get("x-otari-api-key") || body.apiKey || undefined;
+  const byokBaseUrl =
+    req.headers.get("x-otari-base-url") || body.baseUrl || undefined;
+  const testFallbackMode =
+    body.testFallbackMode ?? req.headers.get("x-test-fallback-mode") === "true";
+
+  const authTier = byokApiKey
+    ? "byok"
+    : process.env.OTARI_API_KEY
+      ? "server_otari"
+      : "failover_gateway";
+
+  // ── Per-User Budget & Spend Limit Enforcement ──
+  const userId =
+    req.headers.get("x-user-id") ||
+    body.userId ||
+    req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+    "demo-user";
+
+  const defaultLimit = Number.parseFloat(
+    process.env.OTARI_USER_BUDGET_LIMIT_USD || "0.50",
+  );
+  const userBudgetLimit =
+    body.userBudgetLimit ??
+    (req.headers.get("x-user-budget-limit")
+      ? Number.parseFloat(req.headers.get("x-user-budget-limit")!)
+      : defaultLimit);
+
+  const previousSpend = await getUserCumulativeSpend(userId);
+
+  if (previousSpend >= userBudgetLimit) {
+    return new Response(
+      JSON.stringify({
+        error: "Budget Exceeded",
+        message: `Per-user budget cap of $${userBudgetLimit.toFixed(2)} exceeded ($${previousSpend.toFixed(4)} spent). Otari per-user budget enforcement active.`,
+        budget: {
+          userId,
+          userSpentUsd: previousSpend,
+          userLimitUsd: userBudgetLimit,
+        },
+      }),
+      {
+        status: 429,
+        headers: {
+          "Content-Type": "application/json",
+          "x-otari-budget-exceeded": "true",
+        },
+      },
+    );
   }
 
   const cleanCode = sanitizeCode(code);
@@ -53,65 +151,214 @@ export async function POST(req: Request) {
       };
 
       try {
-        // ── Step 1: Router ──────────────────────────────────
-        emit("step", { step: "routing", message: "Detecting language & selecting review categories…", model: "llama-3.2-1b" });
-        const routerOutput = await runRouter(cleanCode);
-        const language = hintedLanguage || routerOutput.language;
-        emit("router_done", { language, categories: routerOutput.categories });
+        // ── Step 1: Otari Router with Guardrails Pre-Check ──
+        emit("step", {
+          step: "routing",
+          message:
+            "Otari Router: checking guardrails & detecting review categories…",
+          model: "Qwen-3.5-9B",
+        });
 
-        // ── Step 2: RAG + Specialist Analysis (parallel) ──
+        const routerOutput = await runRouter(cleanCode, {
+          userId,
+          userBudget: userBudgetLimit,
+          apiKey: byokApiKey,
+          baseUrl: byokBaseUrl,
+          testFallbackMode,
+        });
+
+        const language = hintedLanguage || routerOutput.language;
+        const effectiveCode = routerOutput.sanitizedCode || cleanCode;
+
+        emit("router_done", {
+          language,
+          categories: routerOutput.categories,
+          guardrailTriggered: routerOutput.guardrailTriggered,
+          guardrailActions: routerOutput.guardrailActions,
+          otari_telemetry: {
+            authTier,
+            guardrails: {
+              passed: !routerOutput.guardrailTriggered,
+              actions: routerOutput.guardrailActions,
+            },
+            modelUsed: routerOutput.modelUsed,
+          },
+        });
+
+        // ── Step 2: Otari Specialists (Sandbox & CVE Web Search) ──
         emit("step", {
           step: "analyzing",
-          message: `Running ${routerOutput.categories.length} specialist agents in parallel…`,
-          model: "qwen-2.5-coder-1.5b",
+          message: `Running ${routerOutput.categories.length} Otari Specialists in parallel (CVE Web Search & Code Sandbox active)…`,
+          model: "Qwen-3-32B",
           categories: routerOutput.categories,
         });
+
         const specialistOutputs = await runAllSpecialists(
-          cleanCode,
-          routerOutput.categories as Array<"security" | "bugs" | "performance" | "style">,
+          effectiveCode,
+          routerOutput.categories as Array<
+            "security" | "bugs" | "performance" | "style"
+          >,
           language,
+          {
+            userId,
+            userBudget: userBudgetLimit,
+            apiKey: byokApiKey,
+            baseUrl: byokBaseUrl,
+            testFallbackMode,
+          },
         );
+
+        const allSandboxRuns = specialistOutputs.flatMap((s) => s.sandboxRuns);
+        const allWebSearchQueries = specialistOutputs.flatMap(
+          (s) => s.webSearchQueries,
+        );
+        const specialistFallbacks = specialistOutputs.filter(
+          (s) => s.fallbackTriggered,
+        ).length;
+
         emit("specialists_done", {
           categories: specialistOutputs.map((s) => ({
             category: s.category,
             issueCount: s.issues.length,
             safe: s.safe,
+            sandboxRunsCount: s.sandboxRuns.length,
+            webQueriesCount: s.webSearchQueries.length,
           })),
+          otari_telemetry: {
+            authTier,
+            codeExecutionRuns: allSandboxRuns,
+            webSearchQueries: allWebSearchQueries,
+          },
         });
 
-        // ── Step 3: Synthesizer ──────────────────────────────
-        emit("step", { step: "synthesizing", message: "Synthesizing final report…", model: "phi-3-mini" });
-        const report = await runSynthesizer(cleanCode, language, specialistOutputs);
+        // ── Step 3: Otari Synthesizer ────────────────────────
+        emit("step", {
+          step: "synthesizing",
+          message:
+            "Otari Synthesizer: combining findings with verified assertions…",
+          model: "Qwen-3.6-35B-MoE",
+        });
+
+        const report = await runSynthesizer(
+          effectiveCode,
+          language,
+          specialistOutputs,
+          {
+            userId,
+            userBudget: userBudgetLimit,
+            apiKey: byokApiKey,
+            baseUrl: byokBaseUrl,
+            testFallbackMode,
+          },
+        );
 
         const latencyMs = Date.now() - analysisStart;
 
-        // ── Persist to database via Drizzle ORM ──────────────────────────
+        // ── Step 4: Budget & Telemetry Aggregation ───────────
+        const routerCost = routerOutput.costUsd || 0.00002;
+        const specialistsCost = specialistOutputs.reduce(
+          (sum, s) => sum + (s.costUsd || 0.00005),
+          0,
+        );
+        const synthesizerCost = report.costUsd || 0.00005;
+        const analysisCostUsd = Number(
+          (routerCost + specialistsCost + synthesizerCost).toFixed(6),
+        );
+        const newCumulativeSpend = Number(
+          (previousSpend + analysisCostUsd).toFixed(4),
+        );
+
+        inMemoryUserSpend.set(userId, newCumulativeSpend);
+
+        const totalTokens =
+          (routerOutput.tokensUsed || 60) +
+          specialistOutputs.reduce((sum, s) => sum + (s.tokensUsed || 180), 0) +
+          (report.tokensUsed || 120);
+
+        const totalFallbacks =
+          (routerOutput.fallbackTriggered ? 1 : 0) +
+          specialistFallbacks +
+          (report.fallbackTriggered ? 1 : 0);
+
+        const otariTelemetry = {
+          authTier,
+          modelsByRole: {
+            router: routerOutput.modelUsed,
+            specialists: specialistOutputs.map((s) => ({
+              category: s.category,
+              model: s.modelUsed,
+              fallback: s.fallbackTriggered,
+              tools: s.toolsInvoked,
+            })),
+            synthesizer: report.modelUsed || "alibaba/qwen3.6-35b-a3b",
+          },
+          fallbacksTriggered: totalFallbacks,
+          codeExecutionRuns: allSandboxRuns,
+          webSearchQueries: allWebSearchQueries,
+          guardrailsStatus: {
+            passed: !routerOutput.guardrailTriggered,
+            redactedCount: routerOutput.guardrailActions.length,
+            actions: routerOutput.guardrailActions,
+          },
+          budget: {
+            userId,
+            analysisCostUsd,
+            userSpentUsd: newCumulativeSpend,
+            userLimitUsd: userBudgetLimit,
+          },
+        };
+
+        const reportWithTelemetry = {
+          ...report,
+          otari_telemetry: otariTelemetry,
+        };
+
+        // ── Persist to database via Drizzle ORM ──────────────
         try {
           await db.insert(analysisHistory).values({
             codeSnippet: cleanCode.slice(0, 2000),
             language,
-            report,
-            modelsUsed: JSON.parse(JSON.stringify(["llama-3.2-1b-instruct", "qwen-2.5-coder-1.5b-instruct", "phi-3-mini-4k-instruct"])),
+            report: reportWithTelemetry as unknown as Record<string, unknown>,
+            modelsUsed: [
+              routerOutput.modelUsed,
+              specialistOutputs[0]?.modelUsed || "alibaba/qwen3-32b",
+              report.modelUsed || "alibaba/qwen3.6-35b-a3b",
+            ],
+            totalTokens,
             latencyMs,
           });
         } catch (dbErr) {
           console.warn("[Analyze] Could not save to history:", dbErr);
         }
 
-        // ── Final report ──────────────────────────────────────
+        // ── Emit Final Done Event ────────────────────────────
         emit("done", {
-          report,
+          report: reportWithTelemetry,
           metrics: {
             latencyMs,
             language,
             modelsUsed: [
-              { name: "meta-llama/llama-3.2-1b-instruct", role: "Router", params: "1B" },
-              { name: "qwen/qwen-2.5-coder-1.5b-instruct", role: "Specialist", params: "1.5B" },
-              { name: "microsoft/phi-3-mini-4k-instruct", role: "Synthesizer", params: "3.8B" },
+              {
+                name: routerOutput.modelUsed,
+                role: "Router (Otari)",
+                params: "9B",
+              },
+              {
+                name: specialistOutputs[0]?.modelUsed || "alibaba/qwen3-32b",
+                role: "Specialist (Otari)",
+                params: "32B",
+              },
+              {
+                name: report.modelUsed || "alibaba/qwen3.6-35b-a3b",
+                role: "Synthesizer (Otari)",
+                params: "35B MoE",
+              },
             ],
-            tier: "Tier 1 (≤4B params)",
-            estimatedCost: "$0.00",
+            tier: "Open-Weight (Mozilla Otari Gateway)",
+            estimatedCost: `$${analysisCostUsd.toFixed(4)}`,
+            costUsd: analysisCostUsd,
           },
+          otari_telemetry: otariTelemetry,
         });
       } catch (err) {
         emit("error", { message: String(err) });

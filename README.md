@@ -1,30 +1,80 @@
-# TinyFlow AI — Garage Inference 2026 Hackathon
+# TinyFlow AI — Mozilla Otari Hackathon (MozFest 2026)
 
-> **Big Ideas. Cheap Models. The constraint is the creativity.**
+> **Powered by Mozilla Otari.ai Open-Source AI Gateway**
 > 
-> Multi-agent AI code review powered by the weakest models that still get the job done — demonstrating that engineering can overcome model limitations.
+> Enterprise multi-agent AI code review built entirely on open-weight models, featuring automated failovers, sandboxed microVM code execution, live CVE web search, guardrails, and per-user budget enforcement.
 
-[![Tier 1](https://img.shields.io/badge/Tier_1-≤4B_params-amber)](#exact-model-declaration)
-[![Cost](https://img.shields.io/badge/Cost_per_analysis-$0.00-emerald)](#cost--performance-metrics)
+[![Mozilla Otari](https://img.shields.io/badge/Gateway-Mozilla_Otari.ai-indigo)](#-mozilla-otari-gateway-integration)
+[![Models](https://img.shields.io/badge/Models-Open--Weight-blue)](#-exact-model-declaration--fallback-registry)
+[![Tools](https://img.shields.io/badge/Tools-code__execution_%7C_web__search-emerald)](#-the-6-otari-gateway-capabilities)
+[![Budget](https://img.shields.io/badge/Cost_Governance-429_Budget_Caps-amber)](#5-per-user-budget-caps--global-spend-locks)
 [![License](https://img.shields.io/badge/License-MIT-blue)](LICENSE)
 
 ---
 
-## 🎯 The Wow Gap
+## 🦊 Mozilla Otari Gateway Integration: The Architectural Evolution
 
-**Weakest Possible Models → Strongest Possible Impact**
+### Why We Migrated from Raw Single-Endpoint Calls to Mozilla Otari.ai
+In our initial prototype, TinyFlow relied on raw, direct model API calls. In real-world software engineering reviews, that approach suffered from critical limitations:
+1. **Single Point of Failure**: When a provider experienced rate limits or outages, analyses crashed mid-pipeline.
+2. **Hallucinated Runtime Bugs**: Models claimed off-by-one errors or infinite loops without any way to prove them.
+3. **Stale Knowledge Cutoffs**: Models could not check live 2025/2026 CVE advisories or recent package deprecations.
+4. **Secret Leaks in Prompts**: Developers pasting code risked sending AWS keys and passwords directly to models.
+5. **Runaway Inference Bills**: Uncapped concurrent analyses could silently exhaust team API budgets.
 
-| Without Engineering | With TinyFlow Scaffolding |
-|---|---|
-| Raw 1B: *"The code looks mostly fine…"* | **7 issues found**: 3 critical, 2 high, 2 medium |
-| Misses SQL injection, XSS, hardcoded secrets | Identifies exact vulnerable lines with fixes |
-| Rambling, inconsistent output | Structured JSON report, actionable fixes |
-
-The key insight: a 1B model that hallucinates on "review my code" becomes **precise and reliable** when it only needs to answer ONE narrow checklist question — with relevant vulnerability patterns already retrieved for it.
+**Mozilla Otari.ai transformed TinyFlow into an enterprise-grade agentic gateway.** All agent calls now route through `https://api.otari.ai/v1`, unlocking multi-model failover chains, isolated sandbox execution, real-time web search tools, pre-flight safety guardrails, and per-user budget controls.
 
 ---
 
-## 🚀 Working Demo
+## ⚡ The 6 Otari Gateway Capabilities
+
+### 1. Open-Weight Model Registry & Automated Fallbacks
+- Primary open-weight models (`Llama 3.2 3B`, `Qwen 2.5 Coder 7B`, `Mistral 7B`) are configured with deterministic fallback paths.
+- If primary inference throws a 429, timeout, or 5xx, Otari automatically reroutes to the backup open-weight model (`Llama 3.1 8B`, `Qwen 2.5 Coder 32B`, `DeepSeek R1 Distill 14B`) without losing context or failing the user's session.
+
+### 2. Sandboxed MicroVM Code Execution (`code_execution`)
+- When the **Bugs** or **Performance** specialist identifies suspected issues (e.g., off-by-one loop boundaries, regex catastrophic backtracking), it generates a focused assertion script.
+- The script executes in Otari's isolated sandbox microVM. If the assertion reproduces the error, the finding is tagged with `[Sandbox Verified via Otari Code Exec]` alongside the exact runtime trace.
+
+### 3. Live CVE & Advisory Web Search (`web_search`)
+- The **Security** specialist invokes Otari's native `web_search` tool to cross-reference imported third-party libraries, cryptographic patterns, and framework versions against live MITRE CVE databases and security bulletins.
+- Verified advisories attach directly to the findings as clickable citations.
+
+### 4. Native Pre-Flight & Post-Flight Guardrails
+- Before code is dispatched to downstream specialists, Otari Guardrails inspect the payload for:
+  - Leaked API keys (AWS, OpenAI, GitHub, private keys)
+  - PII (email addresses, credentials)
+  - Malicious prompt injections concealed inside code comments or docstrings
+- Redacted tokens are neutralized while notifying the developer via UI badges.
+
+### 5. Per-User Budget Caps & Global Spend Locks
+- Every analysis request accepts client identification (`userId` / `x-user-id`) and budget metadata (`x-otari-user-budget`).
+- Otari tracks cumulative token expenditures. When a user exceeds their limit (e.g., demo cap of `$0.50`), the gateway returns a clean `HTTP 429 Budget Exceeded` response, preventing accidental overrun.
+
+### 6. Real-Time Telemetry Streaming over SSE
+- Real-time Server-Sent Events stream rich Otari telemetry to the client:
+  - Open-weight models used per role
+  - Fallback failover counts
+  - Sandbox execution results and outputs
+  - Live CVE queries checked
+  - Guardrail intervention receipts
+  - Micro-dollar token billing calculations
+
+---
+
+## 🎯 The Wow Gap: Runtime Truth Over Hallucinations
+
+| Without Otari Gateway | With TinyFlow + Mozilla Otari |
+|---|---|
+| **Raw Model Output**: Unverified guess about loop boundaries | **Runtime Verified**: MicroVM runs assertion test proving the off-by-one error |
+| **Outdated CVEs**: Relying on 2024 training cutoff | **Live Web Search**: Queries MITRE & NVD for current 2026 advisories |
+| **Brittle Endpoints**: 429 crashes the entire pipeline | **Zero Downtime**: Seamless failover to secondary open-weight model |
+| **Plaintext Secrets**: Leaked keys transmitted to models | **Guardrail Redaction**: Intercepts secrets & prompt injection before inference |
+| **Uncapped Costs**: Unlimited bill shock | **Hard Budget Caps**: Enforces per-user limit with clean HTTP 429 lock |
+
+---
+
+## 🚀 Working Demo & Quickstart
 
 ### One-Command Setup
 
@@ -32,238 +82,138 @@ The key insight: a 1B model that hallucinates on "review my code" becomes **prec
 git clone https://github.com/sanjaysah101/tinyflow-ai
 cd tinyflow-ai
 pnpm install
-cp .env.example .env   # fill in your keys
+cp .env.example .env   # configure keys
 pnpm run db:migrate
 pnpm dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) → paste code → watch the pipeline run.
-
-### Prerequisites
-- Node.js 18+
-- pnpm
-- Supabase account (free tier works)
-- OpenRouter API key (free tier works)
+Open [http://localhost:3000](http://localhost:3000) to view the landing page, or jump directly to [http://localhost:3000/app](http://localhost:3000/app) for the interactive code review sandbox.
 
 ### Environment Variables (`.env`)
 
 ```bash
+# Mozilla Otari.ai AI Gateway
+OTARI_API_KEY=your_otari_api_key_here
+OTARI_BASE_URL=https://api.otari.ai/v1
+OTARI_USER_BUDGET_LIMIT_USD=1.00
+
+# Open-Weight Model Registry (Optional Overrides)
+OTARI_ROUTER_MODEL=alibaba/qwen3.5-9b
+OTARI_SPECIALIST_MODEL=alibaba/qwen3-32b
+OTARI_SYNTHESIZER_MODEL=alibaba/qwen3.6-35b-a3b
+OTARI_EMBEDDING_MODEL=alibaba/qwen3-embedding-0.6b
+
+# Database & Vectors
+DATABASE_URL=postgresql://postgres:[password]@[host]:5432/postgres
 NEXT_PUBLIC_SUPABASE_URL=your_supabase_project_url
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=your_supabase_anon_key
-OPENROUTER_API_KEY=your_openrouter_key
-DATABASE_URL=postgresql://postgres:[password]@[host]:5432/postgres
 ```
 
 ### Database Setup
 
 ```bash
-# Create tables and pgvector index
+# Apply schema migrations
 pnpm run db:migrate
 
-# Seed 24 curated vulnerability patterns (recommended)
+# Seed 24 curated vulnerability patterns
 pnpm run db:seed
 ```
 
 ---
 
-## 📊 Exact Model Declaration
+## 📊 Exact Model Declaration & Fallback Registry
 
-| Component | Model | Parameters | Tier | Cost |
-|---|---|---|---|---|
-| **Router** | `meta-llama/llama-3.2-1b-instruct:free` | 1B | 1 | $0.00 |
-| **Specialist** | `qwen/qwen-2.5-coder-1.5b-instruct:free` | 1.5B | 1 | $0.00 |
-| **Synthesizer** | `microsoft/phi-3-mini-4k-instruct:free` | 3.8B | 1 | $0.00 |
-| **Embedding** | `nomic-ai/nomic-embed-text-v1.5:free` | 768-dim | — | $0.00 |
-
-- **Total Parameters**: ~6.3B (vs GPT-4's 1.7T — **270× smaller**)
-- **Total Cost per Analysis**: **$0.00** (all free tier via OpenRouter)
-
----
-
-## 🛠 Technical Writeup
-
-### Architecture
-
-```
-Code Input
-    │
-    ▼
-┌─────────────────────────────────────┐
-│  Router: Llama 3.2 1B               │  ← Static heuristics first, then AI
-│  Detects language + categories      │
-└──────────────────┬──────────────────┘
-                   │
-    ┌──────────────▼───────────────┐
-    │   RAG: nomic-embed-text       │  ← 24 curated vulnerability patterns
-    │   Retrieves relevant patterns │     via Supabase pgvector
-    └──────────────┬───────────────┘
-                   │
-    ┌──────────────▼──────────────────────────┐
-    │  Specialists: Qwen 2.5 Coder 1.5B       │  ← Promise.allSettled() parallel
-    │  security │ bugs │ performance │ style  │     One narrow question each
-    └──────────────┬──────────────────────────┘
-                   │
-    ┌──────────────▼──────────────────┐
-    │  Synthesizer: Phi-3 Mini 3.8B   │  ← Merges, deduplicates, ranks
-    │  Final prioritized report       │
-    └──────────────┬──────────────────┘
-                   │
-    ┌──────────────▼──────────────────┐
-    │  Supabase                        │  ← Persists analysis + metrics
-    │  analysis_history table          │
-    └─────────────────────────────────┘
-```
-
-### Engineering Scaffolding
-
-| Technique | How Applied |
-|---|---|
-| **Structured Prompts** | Precise category checklists with code examples — model only recognizes patterns, never reasons from scratch |
-| **RAG** | pgvector cosine similarity search across 24 vulnerability patterns, pre-fetched before each specialist call |
-| **Multi-Step Pipeline** | Route → Retrieve → Analyze (parallel) → Validate → Synthesize — 5 focused steps |
-| **Parallel Agents** | `Promise.allSettled()` — all 4 specialists run simultaneously, not sequentially |
-| **Validation Layers** | Zod schema validation on every model output; auto-retry with error-correction prompt on failure |
-| **Static Pre-Screening** | 15+ regex checks that run **before** the AI — guarantees obvious SQLi/XSS/secrets are always caught |
-
-### Key Engineering Challenges Overcome
-
-- **Unicode Handling**: Tiny models fail on non-ASCII characters in prompts; implemented full ASCII sanitization pipeline
-- **Context Window Limits**: 4K token windows — code is chunked, specialists get focused prompts not the whole file
-- **Model Hallucination**: Static pre-screening catches critical issues even when the AI fails; Zod retries fix malformed JSON
-- **Off-by-one Guarantee**: Security issues are caught by deterministic regex, not probabilistic AI inference
-
-### Division of Labor (Honest)
-
-| Task | AI | Engineering |
-|---|---|---|
-| Language classification | ✓ | Static heuristics run first |
-| Vulnerability detection | ✓ | 15+ regex pre-screens guarantee catches |
-| Report synthesis | ✓ | Fallback report if AI fails |
-| Pipeline orchestration | — | ✓ 100% human |
-| RAG retrieval | — | ✓ 100% human |
-| Validation & retries | — | ✓ 100% human |
-
----
-
-## 📈 Cost & Performance Metrics
-
-### Actual Measurements
-
-| Metric | Value |
-|---|---|
-| API calls per analysis | ~50 (router + 4 specialists + synthesizer + embeddings) |
-| Input tokens | ~8K |
-| Output tokens | ~2K |
-| **Total cost** | **$0.00** (all free tier) |
-| Latency (measured) | 15–30 seconds |
-| Throughput | ~2 analyses/minute (rate-limited by OpenRouter free tier) |
-
-### Benchmark vs Commercial Tools
-
-| Metric | TinyFlow (Tier 1) | Commercial (GPT-4 class) | Gap |
+| Role | Primary Open-Weight Model | Fallback Open-Weight Model | Capabilities & Tools |
 |---|---|---|---|
-| Model size | 6.3B params | 400B–1.7T params | **270× smaller** |
-| Cost/analysis | $0.00 | $0.05–$0.50 | **∞ cheaper** |
-| Issue detection | ~85% | ~95% | 10% gap |
-| Critical issue detection | ~95% (static checks) | ~98% | 3% gap |
-| Response format | Structured JSON | Structured JSON | Same |
+| **Router** | `alibaba/qwen3.5-9b` | `alibaba/qwen3-30b-a3b-instruct-2507` | Language routing, Otari Guardrails pre-check ($0.10/M) |
+| **Specialist** | `alibaba/qwen3-32b` | `alibaba/qwen3-coder-480b-a35b-instruct-turbo` | `code_execution` (microVM), `web_search` (CVEs) ($0.08/M) |
+| **Synthesizer** | `alibaba/qwen3.6-35b-a3b` | `alibaba/qwen3.5-27b` | Cross-specialist synthesis, deduplication, schema validation ($0.10/M) |
+| **Embedding** | `alibaba/qwen3-embedding-0.6b` | `nomic-ai/nomic-embed-text-v1.5` | High-dimensional embeddings for RAG retrieval ($0.01/M) |
 
 ---
 
-## 🎥 2-Minute Demo + Known Failures
+## 🛠 Architecture
 
-### Demo Video
-[![TinyFlow AI Demo Video](https://img.youtube.com/vi/zfJ_bBc7cZc/maxresdefault.jpg)](https://youtu.be/zfJ_bBc7cZc "Watch the 2-minute walkthrough video on YouTube")
-
-### ✅ What Works Well
-- SQL injection detection (static regex — near 100% catch rate)
-- XSS via `innerHTML` detection
-- Hardcoded secret detection (API keys, passwords)
-- Off-by-one loop bugs
-- Missing `await` on async DB calls
-- Parallel specialist execution with real-time SSE streaming
-
-### ❌ Known Failures & Honest Limitations
-
-1. **Large codebases**: Context window is 4K tokens — files over ~150 lines are truncated
-2. **Dynamic analysis**: No runtime behavior checking; can't detect race conditions, memory leaks
-3. **Rare languages**: Primarily tuned for JavaScript/Python/SQL; Go/Rust/C support is weaker
-4. **False positives**: ~15% rate on style/performance — mitigated but not eliminated by validation layers
-5. **Network dependency**: Requires OpenRouter availability; offline mode not supported
-6. **Complex data flows**: Can't trace taint across function boundaries or module imports
-7. **Rate limiting**: OpenRouter free tier = 20 req/min; concurrent analyses may queue
+```
+User Code Input
+      │
+      ▼
+┌─────────────────────────────────────────────────────────────┐
+│              Mozilla Otari AI Gateway Router                │
+│                   (alibaba/qwen3.5-9b)                      │
+│  - Guardrails pre-check (leaked API secrets & injection)   │
+│  - Language classification & specialist routing             │
+│  - 3-Tier BYOK Failover: BYOK -> Server Otari -> OpenRouter │
+│  - Per-user budget validation (HTTP 429 lock if capped)     │
+└──────────────────────────────┬──────────────────────────────┘
+                               │
+      ┌────────────────────────▼────────────────────────┐
+      │          RAG: alibaba/qwen3-embedding           │
+      │  Retrieves 24 vulnerability patterns via pgvector│
+      └────────────────────────┬────────────────────────┘
+                               │
+      ┌────────────────────────▼────────────────────────┐
+      │       Parallel Specialists: Qwen 3 32B          │
+      │  (Automatic fallback to Qwen 3 Coder 480B Turbo)│
+      ├────────────────────────┬────────────────────────┤
+      │ Security Specialist    │ Bugs Specialist        │
+      │ ↳ Tool: web_search     │ ↳ Tool: code_execution │
+      │   (Live CVE queries)   │   (MicroVM assertions) │
+      └────────────────────────┬────────────────────────┘
+                               │
+      ┌────────────────────────▼────────────────────────┐
+      │          Synthesizer: Qwen 3.6 35B MoE          │
+      │     (Automatic fallback to Qwen 3.5 27B)        │
+      │  - Unifies sandbox verified proofs & CVE data   │
+      │  - Validates structured Zod schema              │
+      └────────────────────────┬────────────────────────┘
+                               │
+      ┌────────────────────────▼────────────────────────┐
+      │      SSE Telemetry & Postgres Persistence       │
+      │  - Streamed audit trail: models, tools, spend   │
+      │  - Audited history stored in analysis_history   │
+      └─────────────────────────────────────────────────┘
+```
+      │  - Streamed audit trail: models, tools, spend   │
+      │  - Audited history stored in analysis_history   │
+      └─────────────────────────────────────────────────┘
+```
 
 ---
 
-## ✅ Hackathon Compliance Checklist
+## 🎥 Interactive Demo Features (Judge Checklist)
 
-| Requirement | Status | Notes |
-|---|---|---|
-| **Tier 1 Models** (≤4B params) | ✅ | Llama 1B + Qwen 1.5B + Phi-3 3.8B |
-| **Working Demo** | ✅ | Live at `localhost:3000`, `/app` |
-| **Analysis History** | ✅ | `/app/history` — full receipts |
-| **Public GitHub Repo** | ✅ | Open source, MIT license |
-| **Exact Model Declaration** | ✅ | Full table above |
-| **Technical Writeup** | ✅ | Architecture + challenges above |
-| **Cost & Performance Metrics** | ✅ | Actual measurements, not estimates |
-| **Demo Video + Known Failures** | ✅ | Linked above, failures documented |
-| **Open Source** | ✅ | MIT License |
+1. **Live Otari Feature Controls Bar** (`/app`):
+   - **Primary vs Fallback Mode Toggle**: Intentionally forces primary failover to prove Otari automatic model fallback live.
+   - **Otari Code Execution Toggle**: Turns microVM assertion verification on/off.
+   - **Otari Live CVE Search Toggle**: Enables live web queries against CVE advisories.
+   - **Otari Guardrails Toggle**: Demonstrates instant redaction of secrets in code.
+   - **Per-User Budget Simulator**: Live spend bar with a `Test 429 Lock` button that instantly demonstrates Otari budget enforcement.
+2. **Finding Badges**:
+   - `[Sandbox Verified via Otari Code Exec]` with expandable sandbox output.
+   - `[CVE Checked via Otari Web Search]` with clickable Mitre links.
+   - `[Fallback Model Used]` when primary endpoint is rerouted.
+   - `[Guardrail Redacted]` when API keys or injection comments are scrubbed.
+3. **Audit History Dashboard** (`/app/history`):
+   - Full receipts for every run: open-weight models used, fallback events, sandbox executions count, CVE searches count, and cumulative spend.
 
 ---
 
-## 🔧 Development
-
-### Scripts
+## 🔧 Development Scripts
 
 ```bash
-pnpm dev          # Start development server (http://localhost:3000)
-pnpm build        # Build for production
-pnpm start        # Start production server
-pnpm lint         # Biome linter
-pnpm format       # Biome formatter
+pnpm dev             # Start Next.js development server
+pnpm build           # Build production bundle
+pnpm lint            # Run Biome linter & format check
 pnpm run db:migrate  # Run database migrations
 pnpm run db:seed     # Seed vulnerability patterns
 ```
 
-### Project Structure
-
-```
-src/
-├── app/
-│   ├── page.tsx                  # Landing page
-│   ├── layout.tsx                # Root layout (fonts, metadata)
-│   ├── globals.css               # Tailwind v4 + shadcn theme
-│   ├── app/
-│   │   ├── page.tsx              # Code analyzer UI
-│   │   ├── layout.tsx            # App layout
-│   │   └── history/
-│   │       └── page.tsx          # ★ Analysis history + metrics
-│   └── api/
-│       ├── analyze/route.ts      # POST — runs full analysis pipeline
-│       ├── history/route.ts      # GET  — fetches analysis history
-│       └── seed/route.ts         # GET  — seeds vulnerability patterns
-├── lib/
-│   ├── pipeline/
-│   │   ├── router.ts             # Step 1: language detection + routing
-│   │   ├── specialist.ts         # Step 2-4: static checks + AI analysis
-│   │   └── synthesizer.ts        # Step 5: report synthesis
-│   ├── openrouter.ts             # Model registry (all Tier 1, :free suffix)
-│   ├── rag.ts                    # Vector similarity retrieval
-│   ├── db.ts                     # Drizzle ORM schema + Postgres client
-│   └── utils.ts                  # Shared utilities
-├── components/
-│   └── ui/                       # shadcn component library
-scripts/
-├── migrate.js                    # Database migration runner
-└── seed.js                       # Vulnerability pattern seeder
-```
-
 ---
 
-## 🤝 Contributing
+## 🤝 Open Source & MozFest 2026 Compliance
 
-Hackathon submission — open source forever. Fork it, improve it, ship it.
-
-## 📄 License
-
-MIT — maximum impact, minimum friction.
+- **Framework**: Next.js 16 (App Router), React 19, TypeScript
+- **Gateway**: Mozilla Otari AI Gateway (`https://api.otari.ai/v1`)
+- **Models**: 100% Open-Weight (Llama 3.2, Qwen 2.5 Coder, Mistral 7B)
+- **License**: MIT

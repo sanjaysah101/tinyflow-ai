@@ -27,7 +27,14 @@ export const metadata: Metadata = {
   title: "TinyFlow AI - Code Review with Tiny Models",
   description:
     "Multi-agent AI code review powered by models under 4B parameters. Finds bugs, security vulnerabilities, and performance issues at $0.00 cost.",
-  keywords: ["AI", "code review", "tiny models", "security", "bugs", "open source"],
+  keywords: [
+    "AI",
+    "code review",
+    "tiny models",
+    "security",
+    "bugs",
+    "open source",
+  ],
 };
 
 export default function RootLayout({
@@ -40,7 +47,9 @@ export default function RootLayout({
       lang="en"
       className={`${inter.variable} ${spaceGrotesk.variable} ${jetbrainsMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col bg-[#09090b] font-sans">{children}</body>
+      <body className="min-h-full flex flex-col bg-[#09090b] font-sans">
+        {children}
+      </body>
     </html>
   );
 }

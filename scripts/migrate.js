@@ -5,8 +5,8 @@
  * Creates the necessary tables for TinyFlow AI
  */
 
-import postgres from "postgres";
 import { config } from "dotenv";
+import postgres from "postgres";
 
 // Load environment variables
 config({ path: ".env" });
@@ -66,7 +66,7 @@ async function runMigrations() {
     console.log("🔧 Updating models_used column type...");
     try {
       await sql`ALTER TABLE analysis_history ALTER COLUMN models_used TYPE JSONB USING models_used::JSONB;`;
-    } catch (alterErr) {
+    } catch (_alterErr) {
       // Column might already be JSONB or doesn't exist yet, ignore
       console.log("ℹ️  Column update skipped (might already be correct type)");
     }
