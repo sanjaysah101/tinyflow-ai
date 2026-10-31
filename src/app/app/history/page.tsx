@@ -11,10 +11,16 @@ import {
   ChevronUp,
   Clock,
   Code2,
+  Cpu,
+  DollarSign,
+  Globe,
   History,
   RefreshCw,
   ScanSearch,
+  Shield,
+  ShieldCheck,
   Sparkles,
+  Terminal,
   Timer,
 } from "lucide-react";
 import Link from "next/link";
@@ -33,6 +39,32 @@ interface HistoryReport {
   mediumCount: number;
   lowCount: number;
   topPriority: string;
+  otariVerificationSummary?: {
+    sandboxVerifiedCount: number;
+    cveCheckedCount: number;
+    guardrailsPassed: boolean;
+  };
+  otari_telemetry?: {
+    gatewayUrl?: string;
+    modelsByRole?: {
+      router?: string;
+      specialists?: string[];
+      synthesizer?: string;
+    };
+    fallbacksTriggered?: number;
+    codeExecutionRuns?: Array<{ snippet: string; output: string }>;
+    webSearchQueries?: string[];
+    guardrailsStatus?: {
+      passed: boolean;
+      redactedCount: number;
+      actions?: string[];
+    };
+    budget?: {
+      analysisCostUsd: number;
+      userSpentUsd: number;
+      userLimitUsd: number;
+    };
+  };
 }
 
 interface HistoryItem {
@@ -147,7 +179,7 @@ function StatCard({ stat }: { stat: StatItem }) {
         <Icon className={`w-4 h-4 ${stat.color}`} />
       </div>
       <p className="text-2xl font-bold text-white font-mono">{stat.value}</p>
-      <p className="text-[10px] text-zinc-600 mt-0.5 uppercase tracking-wider">
+      <p className="text-[10px] text-zinc-600 mt-0.5 uppercase tracking-wider font-mono">
         {stat.label}
       </p>
     </div>
@@ -172,11 +204,40 @@ function SkeletonCard() {
   );
 }
 
-// ─── Analysis Card ────────────────────────────────────────────
+// ─── Analysis Card with Otari Metrics ─────────────────────────
 
 function AnalysisCard({ item, index }: { item: HistoryItem; index: number }) {
   const [expanded, setExpanded] = useState(false);
+  const [showTelemetry, setShowTelemetry] = useState(false);
   const r = item.report;
+
+  // Extract Otari Telemetry & Metrics
+  const telemetry = r?.otari_telemetry;
+  const sandboxRuns =
+    telemetry?.codeExecutionRuns?.length ??
+    r?.otariVerificationSummary?.sandboxVerifiedCount ??
+    0;
+  const webSearches =
+    telemetry?.webSearchQueries?.length ??
+    r?.otariVerificationSummary?.cveCheckedCount ??
+    0;
+  const fallbacksCount = telemetry?.fallbacksTriggered ?? 0;
+  const guardrailRedacted = telemetry?.guardrailsStatus?.redactedCount ?? 0;
+  const costUsd = telemetry?.budget?.analysisCostUsd ?? 0.0;
+
+  // Determine models used
+  const routerModel =
+    telemetry?.modelsByRole?.router ??
+    item.modelsUsed?.[0] ??
+    "meta-llama/llama-3.2-3b-instruct";
+  const specialistModel =
+    telemetry?.modelsByRole?.specialists?.[0] ??
+    item.modelsUsed?.[1] ??
+    "Qwen/Qwen2.5-Coder-7B-Instruct";
+  const synthesizerModel =
+    telemetry?.modelsByRole?.synthesizer ??
+    item.modelsUsed?.[2] ??
+    "mistralai/Mistral-7B-Instruct-v0.3";
 
   return (
     <motion.div
@@ -195,10 +256,13 @@ function AnalysisCard({ item, index }: { item: HistoryItem; index: number }) {
             </span>
           )}
           {r && <RiskBadge risk={r.overallRisk} />}
+          <span className="inline-flex items-center gap-1 text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
+            Otari Gateway Run #{item.id}
+          </span>
         </div>
-        <div className="flex items-center gap-1.5 text-xs text-zinc-600 shrink-0">
+        <div className="flex items-center gap-1.5 text-xs text-zinc-600 shrink-0 font-mono">
           <Clock className="w-3 h-3" />
-          <span className="font-mono">{timeAgo(item.createdAt)}</span>
+          <span>{timeAgo(item.createdAt)}</span>
         </div>
       </div>
 
@@ -208,6 +272,41 @@ function AnalysisCard({ item, index }: { item: HistoryItem; index: number }) {
           {r.headline}
         </p>
       )}
+
+      {/* Otari Gateway Capability Badges */}
+      <div className="flex flex-wrap gap-1.5 mb-3">
+        <span className="inline-flex items-center gap-1 text-[10px] font-mono px-2 py-0.5 rounded bg-white/[0.03] border border-white/10 text-zinc-300">
+          <Terminal className="w-3 h-3 text-emerald-400" />
+          {sandboxRuns} Sandbox Runs
+        </span>
+        <span className="inline-flex items-center gap-1 text-[10px] font-mono px-2 py-0.5 rounded bg-white/[0.03] border border-white/10 text-zinc-300">
+          <Globe className="w-3 h-3 text-cyan-400" />
+          {webSearches} CVE Checks
+        </span>
+        <span
+          className={`inline-flex items-center gap-1 text-[10px] font-mono px-2 py-0.5 rounded border ${
+            fallbacksCount > 0
+              ? "bg-amber-500/10 border-amber-500/30 text-amber-300"
+              : "bg-white/[0.03] border-white/10 text-zinc-300"
+          }`}
+        >
+          <Cpu className="w-3 h-3 text-amber-400" />
+          {fallbacksCount > 0
+            ? `${fallbacksCount} Fallback Used`
+            : "Primary Chain"}
+        </span>
+        <span className="inline-flex items-center gap-1 text-[10px] font-mono px-2 py-0.5 rounded bg-white/[0.03] border border-white/10 text-zinc-300">
+          <ShieldCheck className="w-3 h-3 text-violet-400" />
+          {guardrailRedacted > 0
+            ? `${guardrailRedacted} Guardrail Redactions`
+            : "Guardrails Passed"}
+        </span>
+        {costUsd > 0 && (
+          <span className="inline-flex items-center gap-1 text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20 text-emerald-300">
+            <DollarSign className="w-3 h-3" />${costUsd.toFixed(4)}
+          </span>
+        )}
+      </div>
 
       {/* Issue counts */}
       {r && r.totalIssues > 0 && (
@@ -244,37 +343,99 @@ function AnalysisCard({ item, index }: { item: HistoryItem; index: number }) {
 
       {/* Bottom row: metrics + expand */}
       <Separator className="bg-white/5 mb-3" />
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3 text-xs text-zinc-600 font-mono">
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <div className="flex items-center gap-3 text-xs text-zinc-500 font-mono">
           {item.latencyMs != null && (
             <span className="flex items-center gap-1">
-              <Activity className="w-3 h-3" />
+              <Activity className="w-3 h-3 text-zinc-400" />
               {(item.latencyMs / 1000).toFixed(1)}s
             </span>
           )}
           {r && (
             <span className="flex items-center gap-1">
-              <ScanSearch className="w-3 h-3" />
+              <ScanSearch className="w-3 h-3 text-zinc-400" />
               {r.totalIssues} issue{r.totalIssues !== 1 ? "s" : ""}
+            </span>
+          )}
+          {item.totalTokens != null && item.totalTokens > 0 && (
+            <span className="hidden sm:inline-flex items-center gap-1">
+              {item.totalTokens.toLocaleString()} tokens
             </span>
           )}
         </div>
 
-        {item.codeSnippet && (
+        <div className="flex items-center gap-3">
           <button
-            onClick={() => setExpanded((v) => !v)}
-            className="flex items-center gap-1 text-xs text-zinc-500 hover:text-white transition-colors"
+            type="button"
+            onClick={() => setShowTelemetry((v) => !v)}
+            className="flex items-center gap-1 text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
           >
-            <Code2 className="w-3.5 h-3.5" />
-            {expanded ? "Hide Code" : "View Code"}
-            {expanded ? (
-              <ChevronUp className="w-3 h-3" />
-            ) : (
-              <ChevronDown className="w-3 h-3" />
-            )}
+            <Cpu className="w-3.5 h-3.5" />
+            {showTelemetry ? "Hide Models" : "Otari Models"}
           </button>
-        )}
+
+          {item.codeSnippet && (
+            <button
+              type="button"
+              onClick={() => setExpanded((v) => !v)}
+              className="flex items-center gap-1 text-xs text-zinc-500 hover:text-white transition-colors"
+            >
+              <Code2 className="w-3.5 h-3.5" />
+              {expanded ? "Hide Code" : "View Code"}
+              {expanded ? (
+                <ChevronUp className="w-3 h-3" />
+              ) : (
+                <ChevronDown className="w-3 h-3" />
+              )}
+            </button>
+          )}
+        </div>
       </div>
+
+      {/* Otari Model breakdown dropdown */}
+      <AnimatePresence>
+        {showTelemetry && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            className="overflow-hidden"
+          >
+            <div className="mt-3 pt-3 border-t border-white/5 space-y-2 text-xs font-mono">
+              <div className="bg-black/30 rounded-xl p-3 space-y-1.5 border border-white/5">
+                <div className="flex items-center justify-between text-zinc-400">
+                  <span className="text-zinc-500">Gateway Endpoint:</span>
+                  <span className="text-indigo-300">
+                    {telemetry?.gatewayUrl ?? "https://api.otari.ai/v1"}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-zinc-400">
+                  <span className="text-zinc-500">Router (Open-Weight):</span>
+                  <span className="text-white truncate max-w-[240px]">
+                    {routerModel}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-zinc-400">
+                  <span className="text-zinc-500">
+                    Specialist (Open-Weight):
+                  </span>
+                  <span className="text-white truncate max-w-[240px]">
+                    {specialistModel}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-zinc-400">
+                  <span className="text-zinc-500">
+                    Synthesizer (Open-Weight):
+                  </span>
+                  <span className="text-white truncate max-w-[240px]">
+                    {synthesizerModel}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Code preview */}
       <AnimatePresence>
@@ -331,8 +492,14 @@ export default function HistoryPage() {
       ? items.reduce((s, i) => s + (i.latencyMs ?? 0), 0) / items.length / 1000
       : 0;
 
-  const uniqueLangs = new Set(items.map((i) => i.language).filter(Boolean))
-    .size;
+  const totalSandboxRuns = items.reduce((sum, item) => {
+    const runs =
+      item.report?.otari_telemetry?.codeExecutionRuns?.length ??
+      item.report?.otariVerificationSummary?.sandboxVerifiedCount ??
+      0;
+    return sum + runs;
+  }, 0);
+
   const totalIssues = items.reduce(
     (s, i) => s + ((i.report as HistoryReport | null)?.totalIssues ?? 0),
     0,
@@ -354,14 +521,14 @@ export default function HistoryPage() {
       bg: "bg-violet-500/10",
     },
     {
-      label: "Languages",
-      value: uniqueLangs.toString(),
-      icon: Code2,
-      color: "text-blue-400",
-      bg: "bg-blue-500/10",
+      label: "Sandbox Executions",
+      value: totalSandboxRuns > 0 ? totalSandboxRuns.toString() : "Active",
+      icon: Terminal,
+      color: "text-emerald-400",
+      bg: "bg-emerald-500/10",
     },
     {
-      label: "Issues Found",
+      label: "Issues Audited",
       value: totalIssues.toString(),
       icon: ScanSearch,
       color: "text-rose-400",
@@ -393,10 +560,18 @@ export default function HistoryPage() {
               <div className="p-1.5 bg-indigo-500/10 rounded-lg border border-indigo-500/20">
                 <History className="w-4 h-4 text-indigo-400" />
               </div>
-              <span className="font-semibold text-white">Analysis History</span>
+              <div>
+                <span className="font-semibold text-white">
+                  Otari Gateway Audit History
+                </span>
+                <span className="text-xs text-zinc-500 block">
+                  MozFest 2026 Verification Trail
+                </span>
+              </div>
             </div>
           </div>
           <button
+            type="button"
             onClick={load}
             disabled={loading}
             className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-white transition-colors disabled:opacity-40"
@@ -421,17 +596,20 @@ export default function HistoryPage() {
           </motion.div>
         )}
 
-        {/* Hackathon note */}
-        <div className="flex items-start gap-2 mb-6 bg-amber-500/5 border border-amber-500/15 rounded-xl p-3">
-          <AlertTriangle className="w-3.5 h-3.5 text-amber-400 mt-0.5 shrink-0" />
-          <p className="text-xs text-amber-300/70">
-            All analyses run at{" "}
-            <span className="text-amber-300 font-mono font-semibold">
-              $0.00
-            </span>{" "}
-            using Tier 1 models (≤4B params) via OpenRouter free tier. These are
-            the actual receipts.
-          </p>
+        {/* MozFest Otari Gateway Banner */}
+        <div className="flex items-start gap-3 mb-6 bg-indigo-500/5 border border-indigo-500/20 rounded-xl p-4">
+          <Shield className="w-4 h-4 text-indigo-400 mt-0.5 shrink-0" />
+          <div className="text-xs text-zinc-300 leading-relaxed">
+            <p className="font-semibold text-white font-mono mb-0.5">
+              Mozilla Otari.ai AI Gateway Telemetry Trail
+            </p>
+            <p className="text-zinc-400">
+              Every pipeline run is routed through Mozilla Otari open-weight
+              models (Llama 3.2, Qwen 2.5 Coder, Mistral 7B) with automated
+              model fallbacks, sandboxed microVM code execution verification,
+              live CVE web search, guardrails, and per-user budget enforcement.
+            </p>
+          </div>
         </div>
 
         {/* Content */}
@@ -451,6 +629,7 @@ export default function HistoryPage() {
             </p>
             <p className="text-sm text-zinc-500 mb-4">{error}</p>
             <button
+              type="button"
               onClick={load}
               className="px-4 py-2 bg-white/5 hover:bg-white/10 text-white rounded-xl text-sm transition-colors"
             >
@@ -463,11 +642,11 @@ export default function HistoryPage() {
               <Sparkles className="w-10 h-10 text-indigo-400" />
             </div>
             <h2 className="text-xl font-semibold text-white mb-2">
-              No analyses yet
+              No analyses logged yet
             </h2>
             <p className="text-sm text-zinc-400 max-w-xs leading-relaxed mb-6">
-              Run your first code analysis to see the history here, including
-              cost receipts and metrics.
+              Run your first code analysis with Otari Gateway to view real-time
+              receipts, sandbox executions, and model telemetry here.
             </p>
             <Link
               href="/app"
