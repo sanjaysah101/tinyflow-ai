@@ -11,19 +11,19 @@
     "format": "biome format --write",
     "seed": "curl http://localhost:3000/api/seed",
     "db:migrate": "node scripts/migrate.js",
-    "db:seed": "npx tsx scripts/seed.js"
+    "db:seed": "npx tsx scripts/seed.js",
+    "record-demo": "node scripts/record-demo.mjs"
   },
   "dependencies": {
     "@ai-sdk/openai": "^3.0.58",
     "@base-ui/react": "^1.4.1",
-    "drizzle-orm": "^0.45.2",
-    "postgres": "^3.4.9",
     "@supabase/ssr": "^0.10.2",
     "ai": "^6.0.174",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
     "date-fns": "^4.1.0",
+    "drizzle-orm": "^0.45.2",
     "embla-carousel-react": "^8.6.0",
     "framer-motion": "^12.38.0",
     "input-otp": "^1.4.2",
@@ -31,6 +31,7 @@
     "next": "16.2.4",
     "next-themes": "^0.4.6",
     "pdf-parse": "1.1.1",
+    "postgres": "^3.4.9",
     "react": "19.2.4",
     "react-day-picker": "^9.14.0",
     "react-dom": "19.2.4",
@@ -51,6 +52,8 @@
     "@types/react-dom": "^19",
     "babel-plugin-react-compiler": "1.0.0",
     "dotenv": "^17.4.2",
+    "node-edge-tts": "^1.2.12",
+    "playwright": "^1.64.1",
     "tailwindcss": "^4",
     "typescript": "^5"
   }
