@@ -436,7 +436,7 @@ export default function AppPage() {
   const [sandboxExecEnabled, setSandboxExecEnabled] = useState(true);
   const [cveSearchEnabled, setCveSearchEnabled] = useState(true);
   const [guardrailsEnabled, setGuardrailsEnabled] = useState(true);
-  const [userSpend, setUserSpend] = useState(0.012);
+  const [userSpend, setUserSpend] = useState(0.0);
   const [userLimit, setUserLimit] = useState(0.5);
   const [budgetExceededAlert, setBudgetExceededAlert] = useState<string | null>(
     null,
@@ -625,11 +625,21 @@ export default function AppPage() {
                 if (data.otari_telemetry) {
                   setOtariTelemetry(data.otari_telemetry as OtariTelemetry);
                   if (data.otari_telemetry.budget?.userSpentUsd != null) {
-                    setUserSpend(data.otari_telemetry.budget.userSpentUsd);
+                    setUserSpend(
+                      Number(data.otari_telemetry.budget.userSpentUsd),
+                    );
+                  } else if (data.metrics?.costUsd != null) {
+                    setUserSpend((prev) =>
+                      Number((prev + data.metrics.costUsd).toFixed(4)),
+                    );
                   }
                   if (data.otari_telemetry.budget?.userLimitUsd != null) {
                     setUserLimit(data.otari_telemetry.budget.userLimitUsd);
                   }
+                } else if (data.metrics?.costUsd != null) {
+                  setUserSpend((prev) =>
+                    Number((prev + data.metrics.costUsd).toFixed(4)),
+                  );
                 }
                 setActiveCategory(
                   data.report.categories[0]?.name ?? "security",
@@ -914,7 +924,7 @@ export default function AppPage() {
                   </div>
                   <div className="flex items-baseline justify-between">
                     <p className="text-xs font-mono font-bold text-white">
-                      ${userSpend.toFixed(3)}
+                      ${userSpend.toFixed(4)}
                     </p>
                     <span className="text-[10px] font-mono text-zinc-400">
                       Cap: ${(userLimit || 0.5).toFixed(2)}

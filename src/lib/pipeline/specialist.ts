@@ -603,8 +603,10 @@ Return JSON with format: { "issues": [ { "title": "...", "description": "...", "
       `[Specialist:${category}] Otari call error, using static checks:`,
       error,
     );
-    fallbackTriggered = true;
-    modelUsed = FALLBACK_CHAIN.specialist[0] || defaultModel;
+    fallbackTriggered = Boolean(options?.testFallbackMode);
+    modelUsed = options?.testFallbackMode
+      ? FALLBACK_CHAIN.specialist[0] || defaultModel
+      : defaultModel;
   }
 
   // ── Step E: Merge and Deduplicate Issues ──

@@ -356,6 +356,7 @@ export async function POST(req: Request) {
             ],
             tier: "Open-Weight (Mozilla Otari Gateway)",
             estimatedCost: `$${analysisCostUsd.toFixed(4)}`,
+            costUsd: analysisCostUsd,
           },
           otari_telemetry: otariTelemetry,
         });

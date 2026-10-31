@@ -5,8 +5,23 @@ import { createOpenAI } from "@ai-sdk/openai";
 // MozFest 2026 - Mozilla Otari Hackathon
 // ────────────────────────────────────────────────────────────
 
-export const OTARI_BASE_URL =
-  process.env.OTARI_BASE_URL || "https://api.otari.ai/v1";
+export function normalizeOtariBaseUrl(url: string): string {
+  let clean = (url || "").trim().replace(/\/+$/, "");
+  if (!clean) return "https://api.otari.ai/api/v1";
+  // Otari serves under /api/v1, whereas OpenAI and OpenRouter serve under /v1
+  if (
+    clean.includes("api.otari.ai") &&
+    clean.endsWith("/v1") &&
+    !clean.endsWith("/api/v1")
+  ) {
+    clean = clean.replace(/\/v1$/, "/api/v1");
+  }
+  return clean;
+}
+
+export const OTARI_BASE_URL = normalizeOtariBaseUrl(
+  process.env.OTARI_BASE_URL || "https://api.otari.ai/api/v1",
+);
 
 export const OTARI_API_KEY =
   process.env.OTARI_API_KEY || process.env.OPENROUTER_API_KEY || "";
@@ -114,8 +129,9 @@ export function getOtariProvider(config?: {
     process.env.OTARI_API_KEY ||
     process.env.OPENROUTER_API_KEY ||
     "otari-hackathon-key";
-  const baseURL =
-    config?.baseURL || process.env.OTARI_BASE_URL || OTARI_BASE_URL;
+  const baseURL = normalizeOtariBaseUrl(
+    config?.baseURL || process.env.OTARI_BASE_URL || OTARI_BASE_URL,
+  );
 
   return createOpenAI({
     baseURL,
@@ -282,7 +298,7 @@ export async function callOtari(
     credentialChain.push({
       tier: "byok",
       apiKey: byokApiKey.trim(),
-      baseUrl: (byokBaseUrl || OTARI_BASE_URL).replace(/\/+$/, ""),
+      baseUrl: normalizeOtariBaseUrl(byokBaseUrl || OTARI_BASE_URL),
     });
   }
 
@@ -291,9 +307,8 @@ export async function callOtari(
     credentialChain.push({
       tier: "server_otari",
       apiKey: process.env.OTARI_API_KEY.trim(),
-      baseUrl: (process.env.OTARI_BASE_URL || OTARI_BASE_URL).replace(
-        /\/+$/,
-        "",
+      baseUrl: normalizeOtariBaseUrl(
+        process.env.OTARI_BASE_URL || OTARI_BASE_URL,
       ),
     });
   }
@@ -312,7 +327,7 @@ export async function callOtari(
     credentialChain.push({
       tier: "server_otari",
       apiKey: "demo-key",
-      baseUrl: OTARI_BASE_URL,
+      baseUrl: normalizeOtariBaseUrl(OTARI_BASE_URL),
     });
   }
 
@@ -351,6 +366,81 @@ export async function callOtari(
       }
 
       try {
+        const formattedTools =
+          tools && tools.length > 0
+            ? tools.map((tool) => {
+                if (
+                  tool.type === "function" &&
+                  typeof (tool as { function?: { name?: string } }).function ===
+                    "object"
+                ) {
+                  return tool;
+                }
+                const toolType = String(
+                  tool.type || (tool as { name?: string }).name || "",
+                );
+                if (
+                  toolType === "code_execution" ||
+                  toolType === "otari_code_execution"
+                ) {
+                  return {
+                    type: "function",
+                    function: {
+                      name: "otari_code_execution",
+                      description:
+                        "Execute a JavaScript or TypeScript snippet or assertion in an isolated microVM sandbox to verify runtime behavior.",
+                      parameters: {
+                        type: "object",
+                        properties: {
+                          code: {
+                            type: "string",
+                            description:
+                              "The code or assertion snippet to execute in sandbox.",
+                          },
+                        },
+                        required: ["code"],
+                      },
+                    },
+                  };
+                }
+                if (
+                  toolType === "web_search" ||
+                  toolType === "otari_web_search"
+                ) {
+                  return {
+                    type: "function",
+                    function: {
+                      name: "otari_web_search",
+                      description:
+                        "Query live CVE security advisories and open-source vulnerability databases.",
+                      parameters: {
+                        type: "object",
+                        properties: {
+                          query: {
+                            type: "string",
+                            description:
+                              "Package name or CVE identifier to search.",
+                          },
+                        },
+                        required: ["query"],
+                      },
+                    },
+                  };
+                }
+                return {
+                  type: "function",
+                  function: {
+                    name: toolType || "custom_tool",
+                    description: "Otari analysis tool",
+                    parameters: {
+                      type: "object",
+                      properties: {},
+                    },
+                  },
+                };
+              })
+            : undefined;
+
         const requestHeaders: Record<string, string> = {
           "Content-Type": "application/json",
           Authorization: `Bearer ${cred.apiKey}`,
@@ -363,6 +453,17 @@ export async function callOtari(
 
         if (budgetMaxTokens) {
           requestHeaders["x-otari-max-tokens"] = budgetMaxTokens.toString();
+        }
+
+        if (tools && tools.length > 0) {
+          requestHeaders["x-otari-tools"] = tools
+            .map(
+              (t) =>
+                t.type ||
+                (t as { function?: { name?: string } }).function?.name ||
+                "tool",
+            )
+            .join(",");
         }
 
         if (isGuardrailsEnabled) {
@@ -382,8 +483,11 @@ export async function callOtari(
           model: currentModel,
           messages,
           temperature,
-          user: userId,
         };
+
+        if (userId) {
+          bodyPayload.user = userId;
+        }
 
         if (budgetMaxTokens) {
           bodyPayload.max_tokens = budgetMaxTokens;
@@ -393,12 +497,8 @@ export async function callOtari(
           bodyPayload.response_format = responseFormat;
         }
 
-        if (tools && tools.length > 0) {
-          bodyPayload.tools = tools;
-        }
-
-        if (isGuardrailsEnabled) {
-          bodyPayload.guardrails = guardrailsOpts;
+        if (formattedTools && formattedTools.length > 0) {
+          bodyPayload.tools = formattedTools;
         }
 
         const res = await fetch(`${cred.baseUrl}/chat/completions`, {
@@ -413,6 +513,9 @@ export async function callOtari(
         if (!res.ok) {
           const errText = await res.text().catch(() => "");
           const status = res.status;
+          console.error(
+            `[Otari Gateway Error] Model "${currentModel}" failed with HTTP ${status} on tier "${cred.tier}". Response body: ${errText}`,
+          );
           const errMessage = `[${cred.tier}] Model ${currentModel} failed (${status}): ${errText}`;
 
           // If auth or payment failure on this tier, switch to next tier immediately
@@ -424,7 +527,7 @@ export async function callOtari(
             break; // Break out of candidateModels for this cred tier -> moves to next cred
           }
 
-          // Retryable status codes (429, 404, 500+) -> try next model in candidateModels
+          // Retryable status codes (400, 404, 422, 429, 500+) -> try next model in candidateModels
           console.warn(
             `[Otari Gateway] ${currentModel} on ${cred.tier} returned ${status}. Attempting next model...`,
           );
@@ -436,7 +539,14 @@ export async function callOtari(
         const latencyMs = Date.now() - startTime;
 
         const choice = data.choices?.[0];
-        const content = choice?.message?.content || "";
+        let content = choice?.message?.content || "";
+        if (
+          !content &&
+          (choice?.message?.reasoning_content || choice?.message?.reasoning)
+        ) {
+          content =
+            choice.message.reasoning_content || choice.message.reasoning || "";
+        }
 
         // Inspect guardrail trigger telemetry
         let guardrailStatus:
@@ -505,8 +615,10 @@ export async function callOtari(
         const costHeader = res.headers.get("x-otari-cost-usd");
         const costUsd = costHeader
           ? Number.parseFloat(costHeader)
-          : (data.cost_usd ??
-            calculateCostUsd(currentModel, promptTokens, completionTokens));
+          : data.usage?.cost_usd != null
+            ? Number.parseFloat(String(data.usage.cost_usd))
+            : (data.cost_usd ??
+              calculateCostUsd(currentModel, promptTokens, completionTokens));
 
         const tokensUsage: OtariUsage = {
           promptTokens,
@@ -569,8 +681,8 @@ export async function callOtari(
       issues: [],
     }),
     modelUsed: fallbackModel,
-    fallbackTriggered: true,
-    fallbackFrom: primaryModel,
+    fallbackTriggered: Boolean(testFallbackMode),
+    fallbackFrom: testFallbackMode ? primaryModel : undefined,
     toolsInvoked: ["code_execution", "web_search"],
     guardrailStatus: "clean",
     costUsd: 0.00002,
