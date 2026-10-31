@@ -38,12 +38,9 @@ export const metadata: Metadata = {
     "MozFest 2026",
   ],
   icons: {
-    icon: [
-      { url: "/icon.svg", type: "image/svg+xml" },
-      { url: "/favicon.ico" },
-    ],
-    shortcut: ["/icon.svg"],
-    apple: [{ url: "/icon.svg" }],
+    icon: [{ url: "/icon.png", type: "image/png" }, { url: "/favicon.ico" }],
+    shortcut: ["/icon.png"],
+    apple: [{ url: "/apple-icon.png" }],
   },
 };
 
