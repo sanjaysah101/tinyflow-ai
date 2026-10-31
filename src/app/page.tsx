@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { Logo } from "@/components/logo";
 
 export const metadata: Metadata = {
   title:
@@ -177,17 +178,7 @@ export default function LandingPage() {
       <div className="relative z-10">
         {/* ── Nav ── */}
         <nav className="max-w-7xl mx-auto px-6 py-5 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-sm font-bold text-indigo-400">
-              TF
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="font-bold text-white">TinyFlow AI</span>
-              <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 font-mono hidden sm:inline-block">
-                Powered by Mozilla Otari
-              </span>
-            </div>
-          </div>
+          <Logo size="md" href="/" />
           <div className="flex items-center gap-3">
             <span className="hidden md:block text-xs text-zinc-500 font-mono">
               MozFest 2026 Hackathon

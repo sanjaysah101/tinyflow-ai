@@ -24,17 +24,27 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "TinyFlow AI - Code Review with Tiny Models",
+  title: "TinyFlow AI — Multi-Agent Code Review Powered by Mozilla Otari",
   description:
-    "Multi-agent AI code review powered by models under 4B parameters. Finds bugs, security vulnerabilities, and performance issues at $0.00 cost.",
+    "Multi-agent AI code review powered by open-weight models via Mozilla Otari. Features pre-flight guardrails, live CVE web search, isolated sandbox code execution, and per-user budgets.",
   keywords: [
     "AI",
     "code review",
-    "tiny models",
+    "Mozilla Otari",
+    "open weight",
+    "Qwen 3",
     "security",
-    "bugs",
-    "open source",
+    "sandbox execution",
+    "MozFest 2026",
   ],
+  icons: {
+    icon: [
+      { url: "/icon.svg", type: "image/svg+xml" },
+      { url: "/favicon.ico" },
+    ],
+    shortcut: ["/icon.svg"],
+    apple: [{ url: "/icon.svg" }],
+  },
 };
 
 export default function RootLayout({

@@ -14,7 +14,6 @@ import {
   Cpu,
   DollarSign,
   Globe,
-  History,
   RefreshCw,
   ScanSearch,
   Shield,
@@ -25,6 +24,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import { LogoIcon } from "@/components/logo";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -564,10 +564,8 @@ export default function HistoryPage() {
               Back to Analyzer
             </Link>
             <Separator orientation="vertical" className="h-4 bg-white/10" />
-            <div className="flex items-center gap-2">
-              <div className="p-1.5 bg-indigo-500/10 rounded-lg border border-indigo-500/20">
-                <History className="w-4 h-4 text-indigo-400" />
-              </div>
+            <div className="flex items-center gap-2.5">
+              <LogoIcon size="sm" />
               <div>
                 <span className="font-semibold text-white">
                   Otari Gateway Audit History

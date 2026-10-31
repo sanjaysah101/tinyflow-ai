@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
+  <defs>
+    <linearGradient id="tf-bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#18181b" />
+      <stop offset="100%" stop-color="#09090b" />
+    </linearGradient>
+    <linearGradient id="tf-glow" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#8b5cf6" />
+      <stop offset="50%" stop-color="#6366f1" />
+      <stop offset="100%" stop-color="#06b6d4" />
+    </linearGradient>
+    <linearGradient id="tf-accent" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#3b82f6" />
+      <stop offset="100%" stop-color="#10b981" />
+    </linearGradient>
+    <filter id="glow-blur" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="1" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+
+  <!-- Background Squircle -->
+  <rect x="1" y="1" width="30" height="30" rx="8" fill="url(#tf-bg)" stroke="url(#tf-glow)" stroke-width="1.5" stroke-opacity="0.6"/>
+
+  <!-- Glowing Stream 1: Top T-Bar Flow -->
+  <path d="M7 9.5 C11 9.5, 14 7.5, 18 9 C22 10.5, 23 8.5, 25 8.5" stroke="url(#tf-glow)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" filter="url(#glow-blur)"/>
+
+  <!-- Stream 2: Intersecting Vertical & Diagonal Flow (Stylized T + F) -->
+  <path d="M14 8.5 L14 23.5 C14 25, 15.5 25.5, 17 25" stroke="url(#tf-glow)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+  
+  <!-- Stream 3: Middle F-Branch Flow with Spark -->
+  <path d="M14 16 C17 16, 19.5 14.5, 23 15.5" stroke="url(#tf-accent)" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Gateway Neural Nodes (Multi-agent router & specialists) -->
+  <circle cx="8" cy="9.5" r="1.5" fill="#a78bfa" />
+  <circle cx="24" cy="8.5" r="1.5" fill="#38bdf8" />
+  <circle cx="22.5" cy="15.5" r="1.5" fill="#34d399" />
+  <circle cx="17" cy="24.8" r="1.5" fill="#818cf8" />
+</svg>
+

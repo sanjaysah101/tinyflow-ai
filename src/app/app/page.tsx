@@ -39,6 +39,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import { Logo } from "@/components/logo";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -717,15 +718,7 @@ export default function AppPage() {
                 Back
               </Link>
               <Separator orientation="vertical" className="h-4 bg-white/10" />
-              <div className="flex items-center gap-2">
-                <div className="p-1.5 bg-indigo-500/10 rounded-lg border border-indigo-500/20">
-                  <Sparkles className="w-4 h-4 text-indigo-400" />
-                </div>
-                <span className="font-semibold text-white">TinyFlow AI</span>
-                <span className="text-xs text-indigo-400 hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-indigo-500/10 border border-indigo-500/20">
-                  Powered by Mozilla Otari.ai
-                </span>
-              </div>
+              <Logo size="sm" href="/" />
             </div>
             <div className="flex items-center gap-3">
               {/* BYOK Config Trigger Button */}
