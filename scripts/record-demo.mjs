@@ -5,8 +5,8 @@
  * Automated 3m 15s MozFest 2026 demo video generator.
  *
  * Uses:
- *  - Playwright (with system Chrome) for 1920×1080 video recording
- *  - Python edge-tts (Microsoft Edge TTS) for neural narration
+ *  - Playwright (with system Chrome/Edge) for 1920×1080 video recording
+ *  - node-edge-tts (with python edge-tts file fallback) for neural narration
  *  - ffmpeg to merge video + audio into final MP4
  *
  * Usage:
@@ -15,20 +15,18 @@
  * Output: public/demo-mozfest-2026.mp4
  */
 
-import { execSync } from "node:child_process";
+import { execSync, spawn } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, unlinkSync } from "node:fs";
+import { writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
+import { EdgeTTS } from "node-edge-tts";
 import { chromium } from "playwright";
 
 // ─── Configuration ──────────────────────────────────────────────
 const PROJECT_ROOT = resolve(import.meta.dirname, "..");
 const TEMP_DIR = join(PROJECT_ROOT, ".demo-tmp");
 const OUTPUT_PATH = join(PROJECT_ROOT, "public", "demo-mozfest-2026.mp4");
-const CHROME_PATH =
-  process.platform === "win32"
-    ? "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
-    : "/usr/bin/google-chrome";
 
 const BASE_URL =
   process.argv.find((a) => a.startsWith("--base-url"))?.split("=")[1] ||
@@ -39,6 +37,30 @@ const TTS_VOICE = "en-US-AndrewMultilingualNeural";
 const TTS_RATE = "+5%"; // Slightly faster for professional pacing
 const VIDEO_WIDTH = 1920;
 const VIDEO_HEIGHT = 1080;
+
+// ─── Browser Resolution ─────────────────────────────────────────
+function getBrowserExecutable() {
+  if (process.env.CHROME_BIN && existsSync(process.env.CHROME_BIN)) {
+    return process.env.CHROME_BIN;
+  }
+  const candidates = [
+    "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+    "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
+    "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
+    "C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe",
+    join(
+      process.env.LOCALAPPDATA || "",
+      "Google\\Chrome\\Application\\chrome.exe",
+    ),
+    "/usr/bin/google-chrome",
+    "/usr/bin/chromium-browser",
+    "/usr/bin/chromium",
+  ];
+  for (const c of candidates) {
+    if (existsSync(c)) return c;
+  }
+  return undefined;
+}
 
 // ─── Narration Scenes ───────────────────────────────────────────
 const SCENES = [
@@ -87,24 +109,83 @@ function cleanDir(dir) {
   }
 }
 
-/** Generate a single narration MP3 via Python edge-tts CLI */
-function generateNarration(sceneId, text, outputPath) {
+/** Generate a single narration MP3 via node-edge-tts (with fallback to python edge-tts --file) */
+async function generateNarration(sceneId, text, outputPath) {
   console.log(`  🎙️  Generating narration for ${sceneId}...`);
-  const escaped = text.replace(/"/g, '\\"');
-  execSync(
-    `python -m edge_tts --voice "${TTS_VOICE}" --rate="${TTS_RATE}" --text "${escaped}" --write-media "${outputPath}"`,
-    { stdio: "pipe", timeout: 60_000 },
-  );
-  return outputPath;
+  try {
+    const tts = new EdgeTTS({
+      voice: TTS_VOICE,
+      rate: TTS_RATE,
+      timeout: 120_000,
+    });
+    await tts.ttsPromise(text, outputPath);
+    return outputPath;
+  } catch (err) {
+    console.warn(
+      `    ⚠️ node-edge-tts error (${err.message}), falling back to python edge-tts via file...`,
+    );
+    const txtFile = outputPath.replace(/\.mp3$/, ".txt");
+    await writeFile(txtFile, text, "utf8");
+    execSync(
+      `python -m edge_tts --voice "${TTS_VOICE}" --rate="${TTS_RATE}" --file "${txtFile}" --write-media "${outputPath}"`,
+      { stdio: "pipe", timeout: 180_000 },
+    );
+    try {
+      unlinkSync(txtFile);
+    } catch {
+      /* ignore */
+    }
+    return outputPath;
+  }
 }
 
 /** Get audio duration in seconds via ffprobe */
 function getAudioDuration(filePath) {
   const raw = execSync(
     `ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${filePath}"`,
-    { encoding: "utf8", timeout: 10_000 },
+    { encoding: "utf8", timeout: 15_000 },
   );
-  return parseFloat(raw.trim());
+  return Number.parseFloat(raw.trim());
+}
+
+/** Ensure target server is reachable, auto-launching dev server if needed */
+async function ensureServerRunning(url) {
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(3000) });
+    if (res.status >= 200 && res.status < 500) {
+      console.log(`  ✅ Target server is online at ${url}`);
+      return null;
+    }
+  } catch {
+    // offline
+  }
+
+  if (url.includes("localhost") || url.includes("127.0.0.1")) {
+    console.log(`  🚀 Starting local server at ${url}...`);
+    const serverProcess = spawn("pnpm", ["dev"], {
+      cwd: PROJECT_ROOT,
+      shell: true,
+      stdio: "pipe",
+    });
+
+    for (let i = 0; i < 40; i++) {
+      await sleep(1500);
+      try {
+        const res = await fetch(url, { signal: AbortSignal.timeout(2000) });
+        if (res.status >= 200 && res.status < 500) {
+          console.log(`  ✅ Local server is ready at ${url}`);
+          return serverProcess;
+        }
+      } catch {
+        // waiting...
+      }
+    }
+    console.warn(
+      `  ⚠️ Could not confirm server at ${url}, proceeding anyway...`,
+    );
+    return serverProcess;
+  }
+  return null;
 }
 
 /** Wait for a specific selector to appear on page */
@@ -141,7 +222,6 @@ async function scrollToTop(page) {
 // ─── Scene Choreography ─────────────────────────────────────────
 
 async function runScene1(page, durationMs) {
-  // Landing Page & Architectural Overview
   console.log("  🎬 Scene 1: Landing page...");
   await page.goto(`${BASE_URL}/`, { waitUntil: "networkidle", timeout: 30000 });
   await sleep(2000);
@@ -152,7 +232,6 @@ async function runScene1(page, durationMs) {
 }
 
 async function runScene2(page, durationMs) {
-  // Navigate to /app, show controls and BYOK modal
   console.log("  🎬 Scene 2: Gateway controls & BYOK...");
   await page.goto(`${BASE_URL}/app`, {
     waitUntil: "networkidle",
@@ -187,16 +266,13 @@ async function runScene2(page, durationMs) {
     await sleep(1500);
   }
 
-  // Fill remaining scene time
   const elapsed = 9000;
   if (durationMs > elapsed) await sleep(durationMs - elapsed);
 }
 
 async function runScene3(page, durationMs) {
-  // Run analysis and watch pipeline stages complete
   console.log("  🎬 Scene 3: Live pipeline & guardrails...");
 
-  // Make sure we're on /app
   const url = page.url();
   if (!url.includes("/app")) {
     await page.goto(`${BASE_URL}/app`, {
@@ -213,14 +289,14 @@ async function runScene3(page, durationMs) {
     console.log("    ▶ Analysis started...");
   }
 
-  // Wait for pipeline to progress - watch for completion indicators
+  // Wait for pipeline to progress
   await sleep(5000);
 
   // Scroll to see pipeline progress
   await page.evaluate(() => window.scrollTo({ top: 400, behavior: "smooth" }));
   await sleep(3000);
 
-  // Wait for analysis to finish (look for results)
+  // Wait for analysis to finish (look for guardrail indicator)
   await waitFor(page, "text=GUARDRAIL", 25000);
   await sleep(2000);
 
@@ -231,13 +307,11 @@ async function runScene3(page, durationMs) {
   // Scroll to show results
   await page.evaluate(() => window.scrollTo({ top: 800, behavior: "smooth" }));
 
-  // Fill remaining time
   const elapsed = 37000;
   if (durationMs > elapsed) await sleep(Math.min(durationMs - elapsed, 10000));
 }
 
 async function runScene4(page, durationMs) {
-  // Click through Security tab, Bugs tab, Force Fallback, Test 429
   console.log("  🎬 Scene 4: CVE search, sandbox & fallbacks...");
 
   // Click Security tab
@@ -320,7 +394,6 @@ async function runScene4(page, durationMs) {
 }
 
 async function runScene5(page, durationMs) {
-  // History page + developer feedback
   console.log("  🎬 Scene 5: History & developer feedback...");
 
   await page.goto(`${BASE_URL}/app/history`, {
@@ -349,12 +422,15 @@ async function main() {
   cleanDir(TEMP_DIR);
   ensureDir(join(PROJECT_ROOT, "public"));
 
+  // Check and ensure server is running
+  const spawnedServer = await ensureServerRunning(BASE_URL);
+
   // ── Step 1: Generate all narration audio ──
-  console.log("━━━ Step 1: Generating narration audio ━━━");
+  console.log("\n━━━ Step 1: Generating narration audio ━━━");
   const sceneData = [];
   for (const scene of SCENES) {
     const audioPath = join(TEMP_DIR, `${scene.id}.mp3`);
-    generateNarration(scene.id, scene.narration, audioPath);
+    await generateNarration(scene.id, scene.narration, audioPath);
     const duration = getAudioDuration(audioPath);
     sceneData.push({
       ...scene,
@@ -379,12 +455,12 @@ async function main() {
   const concatContent = sceneData
     .map((s) => `file '${s.audioPath.replace(/\\/g, "/")}'`)
     .join("\n");
-  (await import("node:fs/promises")).writeFile(concatListPath, concatContent);
+  await writeFile(concatListPath, concatContent, "utf8");
 
   const fullAudioPath = join(TEMP_DIR, "full-narration.mp3");
   execSync(
-    `ffmpeg -y -f concat -safe 0 -i "${concatListPath}" -c copy "${fullAudioPath}"`,
-    { stdio: "pipe", timeout: 30_000 },
+    `ffmpeg -y -f concat -safe 0 -i "${concatListPath}" -c:a libmp3lame -q:a 2 "${fullAudioPath}"`,
+    { stdio: "pipe", timeout: 60_000 },
   );
   const fullAudioDuration = getAudioDuration(fullAudioPath);
   console.log(`  ✅ Full narration: ${fullAudioDuration.toFixed(1)}s`);
@@ -394,8 +470,13 @@ async function main() {
   const videoDir = join(TEMP_DIR, "video");
   ensureDir(videoDir);
 
+  const browserExecutable = getBrowserExecutable();
+  console.log(
+    `  🌐 Browser executable: ${browserExecutable || "Playwright bundled Chromium"}`,
+  );
+
   const browser = await chromium.launch({
-    executablePath: CHROME_PATH,
+    ...(browserExecutable ? { executablePath: browserExecutable } : {}),
     headless: true,
     args: [
       `--window-size=${VIDEO_WIDTH},${VIDEO_HEIGHT}`,
@@ -425,11 +506,9 @@ async function main() {
     );
 
     const sceneStart = Date.now();
-    // Run the choreography
     await SCENE_RUNNERS[i](page, scene.audioDurationMs);
     const elapsed = Date.now() - sceneStart;
 
-    // Pad remaining time to match audio duration exactly
     const remaining = scene.audioDurationMs - elapsed;
     if (remaining > 0) {
       console.log(
@@ -450,6 +529,7 @@ async function main() {
 
   if (!videoPath || !existsSync(videoPath)) {
     console.error("  ❌ Video recording not found! Aborting.");
+    if (spawnedServer) spawnedServer.kill();
     process.exit(1);
   }
 
@@ -460,7 +540,6 @@ async function main() {
   // ── Step 4: Merge video + audio with ffmpeg ──
   console.log("\n━━━ Step 4: Merging video + narration audio ━━━");
 
-  // Re-encode to standard h264 with audio overlay
   execSync(
     [
       "ffmpeg -y",
@@ -469,7 +548,7 @@ async function main() {
       "-c:v libx264 -preset fast -crf 22 -pix_fmt yuv420p",
       "-c:a aac -b:a 192k",
       "-map 0:v:0 -map 1:a:0",
-      `-shortest`,
+      "-shortest",
       "-movflags +faststart",
       `"${OUTPUT_PATH}"`,
     ].join(" "),
@@ -479,21 +558,23 @@ async function main() {
   // ── Step 5: Verify output ──
   if (!existsSync(OUTPUT_PATH)) {
     console.error("  ❌ Output file not created!");
+    if (spawnedServer) spawnedServer.kill();
     process.exit(1);
   }
 
   const finalDuration = getAudioDuration(OUTPUT_PATH);
-  const fileSizeMB = (await import("node:fs/promises"))
-    .stat(OUTPUT_PATH)
-    .then((s) => (s.size / 1024 / 1024).toFixed(1));
+  const stat = await (await import("node:fs/promises")).stat(OUTPUT_PATH);
+  const fileSizeMB = (stat.size / 1024 / 1024).toFixed(1);
 
   console.log("\n╔═══════════════════════════════════════════════════╗");
   console.log("║              ✅ Demo Video Complete!              ║");
   console.log("╠═══════════════════════════════════════════════════╣");
   console.log(`║  Output:   ${OUTPUT_PATH}`);
   console.log(`║  Duration: ${finalDuration.toFixed(1)}s`);
-  console.log(`║  Size:     ${await fileSizeMB} MB`);
+  console.log(`║  Size:     ${fileSizeMB} MB`);
   console.log("╚═══════════════════════════════════════════════════╝");
+
+  if (spawnedServer) spawnedServer.kill();
 
   // Cleanup temp files
   cleanDir(TEMP_DIR);
