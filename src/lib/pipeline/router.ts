@@ -1,13 +1,15 @@
 import { generateObject } from "ai";
 import { z } from "zod";
-import { openrouter, MODELS } from "@/lib/openrouter";
+import { MODELS, openrouter } from "@/lib/openrouter";
 
 // ─── Schemas ────────────────────────────────────────────────
 
 export const RouterOutputSchema = z.object({
   language: z
     .string()
-    .describe("The programming language of the code snippet (e.g. 'javascript', 'python', 'sql', 'unknown')"),
+    .describe(
+      "The programming language of the code snippet (e.g. 'javascript', 'python', 'sql', 'unknown')",
+    ),
   categories: z
     .array(z.enum(["security", "bugs", "performance", "style"]))
     .min(1)
@@ -38,9 +40,15 @@ export async function runRouter(code: string): Promise<RouterOutput> {
 
   // ── Static language detection (runs even if the AI model fails) ──
   let detectedLanguage = "unknown";
-  if (/require\s*\(|const\s+\w+\s*=\s*require|import\s+\w+\s+from|express\(\)|app\.(?:get|post|put|delete|use)\s*\(/.test(code)) {
+  if (
+    /require\s*\(|const\s+\w+\s*=\s*require|import\s+\w+\s+from|express\(\)|app\.(?:get|post|put|delete|use)\s*\(/.test(
+      code,
+    )
+  ) {
     detectedLanguage = "javascript";
-  } else if (/def\s+\w+\s*\(|import\s+\w+|from\s+\w+\s+import|print\s*\(/.test(code)) {
+  } else if (
+    /def\s+\w+\s*\(|import\s+\w+|from\s+\w+\s+import|print\s*\(/.test(code)
+  ) {
     detectedLanguage = "python";
   } else if (/SELECT\s+\*?\s+FROM|INSERT\s+INTO|CREATE\s+TABLE/i.test(code)) {
     detectedLanguage = "sql";
@@ -53,10 +61,17 @@ export async function runRouter(code: string): Promise<RouterOutput> {
   // ── Always check all 4 categories for backend / server code ──
   // A tiny 1B model might skip "security" for code that has obvious SQLi.
   // We override it here based on code patterns - much more reliable.
-  const hasServerPatterns = /express|fastify|koa|http\.createServer|app\.listen|req\.|res\.|\.query\s*\(|\.execute\s*\(|db\.|fetch\s*\(|axios/.test(code);
-  if (hasServerPatterns || (detectedLanguage !== "unknown" && detectedLanguage !== "sql")) {
+  const hasServerPatterns =
+    /express|fastify|koa|http\.createServer|app\.listen|req\.|res\.|\.query\s*\(|\.execute\s*\(|db\.|fetch\s*\(|axios/.test(
+      code,
+    );
+  if (
+    hasServerPatterns ||
+    (detectedLanguage !== "unknown" && detectedLanguage !== "sql")
+  ) {
     return {
-      language: detectedLanguage !== "unknown" ? detectedLanguage : "javascript",
+      language:
+        detectedLanguage !== "unknown" ? detectedLanguage : "javascript",
       categories: ["security", "bugs", "performance", "style"],
       confidence: 0.95,
     };
@@ -80,7 +95,8 @@ ${code.slice(0, 1000)}
 
     return {
       ...object,
-      language: detectedLanguage !== "unknown" ? detectedLanguage : object.language,
+      language:
+        detectedLanguage !== "unknown" ? detectedLanguage : object.language,
     };
   } catch (error) {
     console.warn("[Router] Failed, using fallback:", error);

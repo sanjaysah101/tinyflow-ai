@@ -1,29 +1,51 @@
-import { createOpenAI } from "@ai-sdk/openai";
-
-export const openrouter = createOpenAI({
-  baseURL: "https://openrouter.ai/api/v1",
-  apiKey: process.env.OPENROUTER_API_KEY,
-  headers: {
-    "HTTP-Referer": "https://tinyflow-ai.vercel.app",
-    "X-Title": "TinyFlow AI - Garage Inference 2026",
-  },
-});
-
 // ────────────────────────────────────────────────────────────
-// Model registry - all Tier 1 (<=4B params, free on OpenRouter)
+// Otari Gateway Bridge (Legacy OpenRouter Compatibility Layer)
+// MozFest 2026 - Mozilla Otari Hackathon
 // ────────────────────────────────────────────────────────────
-export const MODELS = {
-  /** 1B - Fastest. Used only for routing / classification */
-  router: "meta-llama/llama-3.2-1b-instruct:free",
+// Re-exports and routes all calls through src/lib/otari.ts so existing
+// pipeline imports and components continue working seamlessly.
 
-  /** 1.5B - Code-specialized. Used for per-category deep analysis */
-  specialist: "qwen/qwen-2.5-coder-1.5b-instruct:free",
+import {
+  type CallOtariOptions,
+  type CallOtariResult,
+  callOtari,
+  FALLBACK_CHAIN,
+  OTARI_MODELS,
+  type OtariGuardrailsOptions,
+  type OtariMessage,
+  type OtariModelKey,
+  type OtariRole,
+  type OtariTool,
+  type OtariUsage,
+  type OtariUserBudgetOptions,
+  otari,
+} from "./otari";
 
-  /** 3.8B - Best quality in Tier 1. Used for final synthesis only */
-  synthesizer: "microsoft/phi-3-mini-4k-instruct:free",
+/**
+ * Re-export Otari provider as openrouter for seamless backward compatibility.
+ * All pipeline calls to openrouter(...) or openrouter.embedding(...) now route
+ * through Mozilla's Otari gateway.
+ */
+export const openrouter = otari;
 
-  /** Embedding model - 768-dim, best-in-class for free tier */
-  embedding: "nomic-ai/nomic-embed-text-v1.5:free",
-} as const;
+/**
+ * Model registry mapped directly to Otari's open-weight models.
+ */
+export const MODELS = OTARI_MODELS;
 
 export type ModelKey = keyof typeof MODELS;
+
+// Forward all Otari exports for convenience
+export { otari, OTARI_MODELS, FALLBACK_CHAIN, callOtari };
+
+export type {
+  OtariRole,
+  OtariModelKey,
+  CallOtariOptions,
+  CallOtariResult,
+  OtariMessage,
+  OtariTool,
+  OtariGuardrailsOptions,
+  OtariUserBudgetOptions,
+  OtariUsage,
+};

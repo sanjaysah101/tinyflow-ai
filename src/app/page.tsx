@@ -1,8 +1,9 @@
-import Link from "next/link";
 import type { Metadata } from "next";
+import Link from "next/link";
 
 export const metadata: Metadata = {
-  title: "TinyFlow AI — Enterprise Code Review with Tiny Models | Garage Inference 2026",
+  title:
+    "TinyFlow AI — Enterprise Code Review with Tiny Models | Garage Inference 2026",
   description:
     "A multi-agent AI code review assistant powered entirely by ≤4B parameter models. Finds bugs, security vulnerabilities, and performance issues at $0.00 cost. Built for the Garage Inference hackathon.",
 };
@@ -82,7 +83,11 @@ const STATS = [
   { label: "Model Size", value: "≤ 4B", sub: "Tier 1 Only" },
   { label: "Cost per Review", value: "$0.00", sub: "Free tier models" },
   { label: "Pipeline Steps", value: "5", sub: "Fully automated" },
-  { label: "Categories Checked", value: "4", sub: "Security · Bugs · Perf · Style" },
+  {
+    label: "Categories Checked",
+    value: "4",
+    sub: "Security · Bugs · Perf · Style",
+  },
 ];
 
 // ─── Wow Gap data with code examples ─────────────────────────
@@ -127,15 +132,26 @@ export default function LandingPage() {
             <span className="font-bold text-white">TinyFlow AI</span>
           </div>
           <div className="flex items-center gap-3">
-            <span className="hidden md:block text-xs text-zinc-500 font-mono">Garage Inference 2026</span>
+            <span className="hidden md:block text-xs text-zinc-500 font-mono">
+              Garage Inference 2026
+            </span>
             <a
               href="https://github.com/sanjaysah101/tinyflow-ai"
               target="_blank"
               rel="noopener noreferrer"
               className="hidden sm:flex items-center gap-1.5 text-xs text-zinc-500 hover:text-white transition-colors px-3 py-1.5 rounded-lg hover:bg-white/5 border border-transparent hover:border-white/10"
             >
-              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                <path fillRule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" clipRule="evenodd" />
+              <svg
+                className="w-4 h-4"
+                fill="currentColor"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <path
+                  fillRule="evenodd"
+                  d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"
+                  clipRule="evenodd"
+                />
               </svg>
               GitHub
             </a>
@@ -161,8 +177,9 @@ export default function LandingPage() {
             </span>
           </h1>
           <p className="text-xl text-zinc-400 max-w-2xl mx-auto leading-relaxed mb-10">
-            Three tiny models (1B, 1.5B, 3.8B parameters) work together to find security vulnerabilities,
-            bugs, performance issues, and code style problems — with the accuracy of a senior engineer.
+            Three tiny models (1B, 1.5B, 3.8B parameters) work together to find
+            security vulnerabilities, bugs, performance issues, and code style
+            problems — with the accuracy of a senior engineer.
           </p>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
             <Link
@@ -182,7 +199,10 @@ export default function LandingPage() {
           {/* Stats bar */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-20 max-w-3xl mx-auto">
             {STATS.map((s) => (
-              <div key={s.label} className="bg-white/[0.02] border border-white/10 rounded-2xl p-4 text-center">
+              <div
+                key={s.label}
+                className="bg-white/[0.02] border border-white/10 rounded-2xl p-4 text-center"
+              >
                 <p className="text-3xl font-bold text-white mb-1">{s.value}</p>
                 <p className="text-xs text-zinc-500 font-mono">{s.sub}</p>
                 <p className="text-xs text-zinc-600 mt-0.5">{s.label}</p>
@@ -194,10 +214,13 @@ export default function LandingPage() {
         {/* ── The Wow Gap ── */}
         <section className="max-w-5xl mx-auto px-6 py-20 border-t border-white/5">
           <div className="text-center mb-12">
-            <span className="text-xs font-mono text-indigo-400 tracking-widest uppercase">The Core Metric — 30% of judging score</span>
+            <span className="text-xs font-mono text-indigo-400 tracking-widest uppercase">
+              The Core Metric — 30% of judging score
+            </span>
             <h2 className="text-4xl font-bold text-white mt-3">The Wow Gap</h2>
             <p className="text-zinc-400 mt-4 max-w-xl mx-auto">
-              The same 1B model. Radically different outcomes. Engineering is the multiplier.
+              The same 1B model. Radically different outcomes. Engineering is
+              the multiplier.
             </p>
           </div>
 
@@ -206,7 +229,9 @@ export default function LandingPage() {
             <div className="flex flex-col gap-3">
               <div className="flex items-center gap-2">
                 <div className="w-2 h-2 rounded-full bg-red-400" />
-                <span className="text-sm font-medium text-red-400">Raw 1B model — no scaffolding</span>
+                <span className="text-sm font-medium text-red-400">
+                  Raw 1B model — no scaffolding
+                </span>
               </div>
               <div className="bg-red-500/5 border border-red-500/15 rounded-2xl overflow-hidden">
                 <div className="flex items-center gap-2 px-4 py-2 bg-black/20 border-b border-red-500/10">
@@ -215,16 +240,22 @@ export default function LandingPage() {
                     <div className="w-2.5 h-2.5 rounded-full bg-yellow-500/40" />
                     <div className="w-2.5 h-2.5 rounded-full bg-green-500/40" />
                   </div>
-                  <span className="text-xs text-zinc-600 font-mono">raw-output.txt</span>
+                  <span className="text-xs text-zinc-600 font-mono">
+                    raw-output.txt
+                  </span>
                 </div>
-                <pre className="p-5 text-xs font-mono text-zinc-400 leading-relaxed overflow-x-auto whitespace-pre-wrap">{WOW_BEFORE}</pre>
+                <pre className="p-5 text-xs font-mono text-zinc-400 leading-relaxed overflow-x-auto whitespace-pre-wrap">
+                  {WOW_BEFORE}
+                </pre>
               </div>
             </div>
 
             <div className="flex flex-col gap-3">
               <div className="flex items-center gap-2">
                 <div className="w-2 h-2 rounded-full bg-emerald-400" />
-                <span className="text-sm font-medium text-emerald-400">TinyFlow 1B + engineering scaffold</span>
+                <span className="text-sm font-medium text-emerald-400">
+                  TinyFlow 1B + engineering scaffold
+                </span>
               </div>
               <div className="bg-emerald-500/5 border border-emerald-500/15 rounded-2xl overflow-hidden">
                 <div className="flex items-center gap-2 px-4 py-2 bg-black/20 border-b border-emerald-500/10">
@@ -233,9 +264,13 @@ export default function LandingPage() {
                     <div className="w-2.5 h-2.5 rounded-full bg-yellow-500/40" />
                     <div className="w-2.5 h-2.5 rounded-full bg-green-500/40" />
                   </div>
-                  <span className="text-xs text-zinc-600 font-mono">tinyflow-output.json</span>
+                  <span className="text-xs text-zinc-600 font-mono">
+                    tinyflow-output.json
+                  </span>
                 </div>
-                <pre className="p-5 text-xs font-mono text-zinc-400 leading-relaxed overflow-x-auto whitespace-pre-wrap">{WOW_AFTER}</pre>
+                <pre className="p-5 text-xs font-mono text-zinc-400 leading-relaxed overflow-x-auto whitespace-pre-wrap">
+                  {WOW_AFTER}
+                </pre>
               </div>
             </div>
           </div>
@@ -244,8 +279,10 @@ export default function LandingPage() {
             <p className="text-zinc-400 text-sm">
               The key insight:{" "}
               <span className="text-white font-medium">
-                A tiny model that hallucinates when asked to &ldquo;review my code&rdquo; becomes precise and reliable
-                when it only needs to answer ONE narrow question — with the right context already retrieved for it.
+                A tiny model that hallucinates when asked to &ldquo;review my
+                code&rdquo; becomes precise and reliable when it only needs to
+                answer ONE narrow question — with the right context already
+                retrieved for it.
               </span>
             </p>
           </div>
@@ -254,10 +291,15 @@ export default function LandingPage() {
         {/* ── Models ── */}
         <section className="max-w-5xl mx-auto px-6 py-20 border-t border-white/5">
           <div className="text-center mb-12">
-            <span className="text-xs font-mono text-indigo-400 tracking-widest uppercase">The Team</span>
-            <h2 className="text-4xl font-bold text-white mt-3">Three Tiny Specialists</h2>
+            <span className="text-xs font-mono text-indigo-400 tracking-widest uppercase">
+              The Team
+            </span>
+            <h2 className="text-4xl font-bold text-white mt-3">
+              Three Tiny Specialists
+            </h2>
             <p className="text-zinc-400 mt-4 max-w-xl mx-auto">
-              Not one smart model. Three tiny models, each doing one thing they&apos;re good at.
+              Not one smart model. Three tiny models, each doing one thing
+              they&apos;re good at.
             </p>
           </div>
           <div className="grid md:grid-cols-3 gap-6">
@@ -267,15 +309,25 @@ export default function LandingPage() {
                 className={`bg-gradient-to-b ${m.color} border ${m.border} rounded-2xl p-6 flex flex-col gap-3`}
               >
                 <div className="flex items-center justify-between">
-                  <span className={`text-xs font-mono ${m.badgeColor}`}>{m.badge}</span>
-                  <span className="text-xs text-zinc-600 font-mono">{m.tier}</span>
+                  <span className={`text-xs font-mono ${m.badgeColor}`}>
+                    {m.badge}
+                  </span>
+                  <span className="text-xs text-zinc-600 font-mono">
+                    {m.tier}
+                  </span>
                 </div>
                 <div>
-                  <p className="text-[11px] text-zinc-500 uppercase tracking-widest font-mono">{m.role}</p>
-                  <p className="text-lg font-bold text-white mt-0.5">{m.name}</p>
+                  <p className="text-[11px] text-zinc-500 uppercase tracking-widest font-mono">
+                    {m.role}
+                  </p>
+                  <p className="text-lg font-bold text-white mt-0.5">
+                    {m.name}
+                  </p>
                   <p className="text-xs text-zinc-500 font-mono">{m.params}</p>
                 </div>
-                <p className="text-sm text-zinc-400 leading-relaxed flex-1">{m.desc}</p>
+                <p className="text-sm text-zinc-400 leading-relaxed flex-1">
+                  {m.desc}
+                </p>
                 <div className="flex items-center gap-1.5 text-xs text-zinc-600 font-mono">
                   <span className="text-emerald-500">●</span> Free on OpenRouter
                 </div>
@@ -285,16 +337,22 @@ export default function LandingPage() {
         </section>
 
         {/* ── How it Works ── */}
-        <section id="how-it-works" className="max-w-5xl mx-auto px-6 py-20 border-t border-white/5">
+        <section
+          id="how-it-works"
+          className="max-w-5xl mx-auto px-6 py-20 border-t border-white/5"
+        >
           <div className="text-center mb-12">
-            <span className="text-xs font-mono text-indigo-400 tracking-widest uppercase">The Engineering</span>
+            <span className="text-xs font-mono text-indigo-400 tracking-widest uppercase">
+              The Engineering
+            </span>
             <h2 className="text-4xl font-bold text-white mt-3">How It Works</h2>
             <p className="text-zinc-400 mt-4 max-w-xl mx-auto">
-              Five steps. Three models. One powerful pipeline built around the model&apos;s limitations, not despite them.
+              Five steps. Three models. One powerful pipeline built around the
+              model&apos;s limitations, not despite them.
             </p>
           </div>
           <div className="space-y-3">
-            {STEPS.map((step, i) => (
+            {STEPS.map((step, _i) => (
               <div
                 key={step.num}
                 className="flex items-start gap-6 bg-white/[0.02] border border-white/8 rounded-2xl p-6 hover:border-white/15 transition-colors"
@@ -304,10 +362,14 @@ export default function LandingPage() {
                 </div>
                 <div className="flex-1">
                   <div className="flex items-center gap-3 mb-1">
-                    <span className="text-xs font-mono text-zinc-600">{step.num}</span>
+                    <span className="text-xs font-mono text-zinc-600">
+                      {step.num}
+                    </span>
                     <h3 className="font-semibold text-white">{step.title}</h3>
                   </div>
-                  <p className="text-sm text-zinc-400 leading-relaxed">{step.desc}</p>
+                  <p className="text-sm text-zinc-400 leading-relaxed">
+                    {step.desc}
+                  </p>
                 </div>
               </div>
             ))}
@@ -317,8 +379,12 @@ export default function LandingPage() {
         {/* ── Engineering Techniques ── */}
         <section className="max-w-5xl mx-auto px-6 py-20 border-t border-white/5">
           <div className="text-center mb-12">
-            <span className="text-xs font-mono text-indigo-400 tracking-widest uppercase">Hackathon Criteria</span>
-            <h2 className="text-4xl font-bold text-white mt-3">Engineering Scaffolding</h2>
+            <span className="text-xs font-mono text-indigo-400 tracking-widest uppercase">
+              Hackathon Criteria
+            </span>
+            <h2 className="text-4xl font-bold text-white mt-3">
+              Engineering Scaffolding
+            </h2>
           </div>
           <div className="grid md:grid-cols-2 gap-4">
             {[
@@ -343,10 +409,15 @@ export default function LandingPage() {
                 icon: "🔬",
               },
             ].map((t) => (
-              <div key={t.title} className="bg-white/[0.02] border border-white/10 rounded-2xl p-6">
+              <div
+                key={t.title}
+                className="bg-white/[0.02] border border-white/10 rounded-2xl p-6"
+              >
                 <div className="text-2xl mb-3">{t.icon}</div>
                 <h3 className="font-semibold text-white mb-2">{t.title}</h3>
-                <p className="text-sm text-zinc-400 leading-relaxed">{t.desc}</p>
+                <p className="text-sm text-zinc-400 leading-relaxed">
+                  {t.desc}
+                </p>
               </div>
             ))}
           </div>
@@ -360,8 +431,9 @@ export default function LandingPage() {
             <span className="text-zinc-500">Like, actually free.</span>
           </h2>
           <p className="text-xl text-zinc-400 max-w-xl mx-auto mb-10 leading-relaxed">
-            No API key required. No sign up. Paste your code and watch three models smaller than your phone&apos;s camera app
-            find real bugs in seconds.
+            No API key required. No sign up. Paste your code and watch three
+            models smaller than your phone&apos;s camera app find real bugs in
+            seconds.
           </p>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
             <Link
@@ -383,8 +455,14 @@ export default function LandingPage() {
         <footer className="border-t border-white/5 py-8">
           <div className="max-w-5xl mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-4 text-xs text-zinc-600 font-mono">
             <div className="text-center md:text-left">
-              <p>TinyFlow AI · Garage Inference 2026 · Open Source · Tier 1 (≤4B params)</p>
-              <p className="mt-1">Models: Llama 3.2 1B · Qwen 2.5 Coder 1.5B · Phi-3 Mini 3.8B · All via OpenRouter free tier</p>
+              <p>
+                TinyFlow AI · Garage Inference 2026 · Open Source · Tier 1 (≤4B
+                params)
+              </p>
+              <p className="mt-1">
+                Models: Llama 3.2 1B · Qwen 2.5 Coder 1.5B · Phi-3 Mini 3.8B ·
+                All via OpenRouter free tier
+              </p>
             </div>
             <div className="flex items-center gap-4">
               <a
@@ -393,12 +471,26 @@ export default function LandingPage() {
                 rel="noopener noreferrer"
                 className="flex items-center gap-1.5 hover:text-white transition-colors"
               >
-                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                  <path fillRule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" clipRule="evenodd" />
+                <svg
+                  className="w-4 h-4"
+                  fill="currentColor"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                >
+                  <path
+                    fillRule="evenodd"
+                    d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"
+                    clipRule="evenodd"
+                  />
                 </svg>
                 GitHub
               </a>
-              <Link href="/app/history" className="hover:text-white transition-colors">History</Link>
+              <Link
+                href="/app/history"
+                className="hover:text-white transition-colors"
+              >
+                History
+              </Link>
             </div>
           </div>
         </footer>

@@ -7,8 +7,12 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-sans), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  --font-mono: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  --font-sans:
+    var(--font-sans), ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+    Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono:
+    var(--font-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    "Liberation Mono", "Courier New", monospace;
   --font-display: var(--font-display), var(--font-sans), system-ui, sans-serif;
   --font-heading: var(--font-display);
   --color-sidebar-ring: var(--sidebar-ring);
@@ -133,12 +137,20 @@
     font-family: var(--font-sans);
     font-feature-settings: "cv11", "ss01", "ss03";
   }
-  h1, h2, h3, h4, h5, h6 {
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
     font-family: var(--font-display);
     font-feature-settings: "ss02", "ss05";
     letter-spacing: -0.02em;
   }
-  code, pre, kbd, samp {
+  code,
+  pre,
+  kbd,
+  samp {
     font-family: var(--font-mono);
     font-feature-settings: "calt", "liga";
   }

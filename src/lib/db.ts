@@ -1,6 +1,13 @@
-import postgres from "postgres";
+import {
+  integer,
+  jsonb,
+  pgTable,
+  serial,
+  text,
+  timestamp,
+} from "drizzle-orm/pg-core";
 import { drizzle } from "drizzle-orm/postgres-js";
-import { pgTable, serial, text, jsonb, timestamp, integer } from "drizzle-orm/pg-core";
+import postgres from "postgres";
 
 const DATABASE_URL = process.env.DATABASE_URL;
 if (!DATABASE_URL) {

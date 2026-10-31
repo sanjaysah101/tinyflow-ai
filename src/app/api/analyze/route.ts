@@ -1,4 +1,4 @@
-import { db, analysisHistory } from "@/lib/db";
+import { analysisHistory, db } from "@/lib/db";
 import { runRouter } from "@/lib/pipeline/router";
 import { runAllSpecialists } from "@/lib/pipeline/specialist";
 import { runSynthesizer } from "@/lib/pipeline/synthesizer";
@@ -35,10 +35,15 @@ export async function POST(req: Request) {
   const { code, language: hintedLanguage } = body;
 
   if (!code || typeof code !== "string" || code.trim().length < 10) {
-    return new Response(JSON.stringify({ error: "Please provide at least 10 characters of code." }), {
-      status: 400,
-      headers: { "Content-Type": "application/json" },
-    });
+    return new Response(
+      JSON.stringify({
+        error: "Please provide at least 10 characters of code.",
+      }),
+      {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      },
+    );
   }
 
   const cleanCode = sanitizeCode(code);
@@ -54,7 +59,11 @@ export async function POST(req: Request) {
 
       try {
         // ── Step 1: Router ──────────────────────────────────
-        emit("step", { step: "routing", message: "Detecting language & selecting review categories…", model: "llama-3.2-1b" });
+        emit("step", {
+          step: "routing",
+          message: "Detecting language & selecting review categories…",
+          model: "llama-3.2-1b",
+        });
         const routerOutput = await runRouter(cleanCode);
         const language = hintedLanguage || routerOutput.language;
         emit("router_done", { language, categories: routerOutput.categories });
@@ -68,7 +77,9 @@ export async function POST(req: Request) {
         });
         const specialistOutputs = await runAllSpecialists(
           cleanCode,
-          routerOutput.categories as Array<"security" | "bugs" | "performance" | "style">,
+          routerOutput.categories as Array<
+            "security" | "bugs" | "performance" | "style"
+          >,
           language,
         );
         emit("specialists_done", {
@@ -80,8 +91,16 @@ export async function POST(req: Request) {
         });
 
         // ── Step 3: Synthesizer ──────────────────────────────
-        emit("step", { step: "synthesizing", message: "Synthesizing final report…", model: "phi-3-mini" });
-        const report = await runSynthesizer(cleanCode, language, specialistOutputs);
+        emit("step", {
+          step: "synthesizing",
+          message: "Synthesizing final report…",
+          model: "phi-3-mini",
+        });
+        const report = await runSynthesizer(
+          cleanCode,
+          language,
+          specialistOutputs,
+        );
 
         const latencyMs = Date.now() - analysisStart;
 
@@ -91,7 +110,13 @@ export async function POST(req: Request) {
             codeSnippet: cleanCode.slice(0, 2000),
             language,
             report,
-            modelsUsed: JSON.parse(JSON.stringify(["llama-3.2-1b-instruct", "qwen-2.5-coder-1.5b-instruct", "phi-3-mini-4k-instruct"])),
+            modelsUsed: JSON.parse(
+              JSON.stringify([
+                "llama-3.2-1b-instruct",
+                "qwen-2.5-coder-1.5b-instruct",
+                "phi-3-mini-4k-instruct",
+              ]),
+            ),
             latencyMs,
           });
         } catch (dbErr) {
@@ -105,9 +130,21 @@ export async function POST(req: Request) {
             latencyMs,
             language,
             modelsUsed: [
-              { name: "meta-llama/llama-3.2-1b-instruct", role: "Router", params: "1B" },
-              { name: "qwen/qwen-2.5-coder-1.5b-instruct", role: "Specialist", params: "1.5B" },
-              { name: "microsoft/phi-3-mini-4k-instruct", role: "Synthesizer", params: "3.8B" },
+              {
+                name: "meta-llama/llama-3.2-1b-instruct",
+                role: "Router",
+                params: "1B",
+              },
+              {
+                name: "qwen/qwen-2.5-coder-1.5b-instruct",
+                role: "Specialist",
+                params: "1.5B",
+              },
+              {
+                name: "microsoft/phi-3-mini-4k-instruct",
+                role: "Synthesizer",
+                params: "3.8B",
+              },
             ],
             tier: "Tier 1 (≤4B params)",
             estimatedCost: "$0.00",

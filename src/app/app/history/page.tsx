@@ -1,27 +1,26 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import {
+  Activity,
+  AlertTriangle,
   ArrowLeft,
-  Clock,
-  Code2,
+  BarChart2,
+  CheckCircle2,
   ChevronDown,
   ChevronUp,
+  Clock,
+  Code2,
   History,
-  Activity,
-  Sparkles,
   RefreshCw,
-  AlertTriangle,
-  CheckCircle2,
-  BarChart2,
-  Timer,
   ScanSearch,
+  Sparkles,
+  Timer,
 } from "lucide-react";
 import Link from "next/link";
-import { Badge } from "@/components/ui/badge";
-import { Skeleton } from "@/components/ui/skeleton";
+import { useCallback, useEffect, useState } from "react";
 import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
 
 // ─── Types ────────────────────────────────────────────────────
 
@@ -61,28 +60,68 @@ function timeAgo(dateStr: string | null): string {
   return `${days}d ago`;
 }
 
-const RISK_STYLE: Record<string, { label: string; color: string; bg: string; dot: string }> = {
-  critical: { label: "Critical", color: "text-red-400",     bg: "bg-red-500/10 border-red-500/25",       dot: "bg-red-400"     },
-  high:     { label: "High",     color: "text-orange-400",  bg: "bg-orange-500/10 border-orange-500/25", dot: "bg-orange-400"  },
-  medium:   { label: "Medium",   color: "text-yellow-400",  bg: "bg-yellow-500/10 border-yellow-500/25", dot: "bg-yellow-400"  },
-  low:      { label: "Low",      color: "text-blue-400",    bg: "bg-blue-500/10 border-blue-500/25",     dot: "bg-blue-400"    },
-  clean:    { label: "Clean",    color: "text-emerald-400", bg: "bg-emerald-500/10 border-emerald-500/25", dot: "bg-emerald-400" },
+const RISK_STYLE: Record<
+  string,
+  { label: string; color: string; bg: string; dot: string }
+> = {
+  critical: {
+    label: "Critical",
+    color: "text-red-400",
+    bg: "bg-red-500/10 border-red-500/25",
+    dot: "bg-red-400",
+  },
+  high: {
+    label: "High",
+    color: "text-orange-400",
+    bg: "bg-orange-500/10 border-orange-500/25",
+    dot: "bg-orange-400",
+  },
+  medium: {
+    label: "Medium",
+    color: "text-yellow-400",
+    bg: "bg-yellow-500/10 border-yellow-500/25",
+    dot: "bg-yellow-400",
+  },
+  low: {
+    label: "Low",
+    color: "text-blue-400",
+    bg: "bg-blue-500/10 border-blue-500/25",
+    dot: "bg-blue-400",
+  },
+  clean: {
+    label: "Clean",
+    color: "text-emerald-400",
+    bg: "bg-emerald-500/10 border-emerald-500/25",
+    dot: "bg-emerald-400",
+  },
 };
 
 function RiskBadge({ risk }: { risk: string }) {
   const cfg = RISK_STYLE[risk] ?? RISK_STYLE.low;
   return (
-    <span className={`inline-flex items-center gap-1.5 text-[11px] font-mono font-semibold px-2 py-0.5 rounded-full border ${cfg.bg} ${cfg.color}`}>
+    <span
+      className={`inline-flex items-center gap-1.5 text-[11px] font-mono font-semibold px-2 py-0.5 rounded-full border ${cfg.bg} ${cfg.color}`}
+    >
       <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${cfg.dot}`} />
       {cfg.label}
     </span>
   );
 }
 
-function IssuePill({ count, label, color }: { count: number; label: string; color: string }) {
+function IssuePill({
+  count,
+  label,
+  color,
+}: {
+  count: number;
+  label: string;
+  color: string;
+}) {
   if (count === 0) return null;
   return (
-    <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded border ${color}`}>
+    <span
+      className={`text-[10px] font-mono px-1.5 py-0.5 rounded border ${color}`}
+    >
       {count} {label}
     </span>
   );
@@ -102,11 +141,15 @@ function StatCard({ stat }: { stat: StatItem }) {
   const Icon = stat.icon;
   return (
     <div className="bg-white/[0.02] border border-white/10 rounded-2xl p-4 text-center">
-      <div className={`inline-flex items-center justify-center w-8 h-8 rounded-lg mb-2 ${stat.bg}`}>
+      <div
+        className={`inline-flex items-center justify-center w-8 h-8 rounded-lg mb-2 ${stat.bg}`}
+      >
         <Icon className={`w-4 h-4 ${stat.color}`} />
       </div>
       <p className="text-2xl font-bold text-white font-mono">{stat.value}</p>
-      <p className="text-[10px] text-zinc-600 mt-0.5 uppercase tracking-wider">{stat.label}</p>
+      <p className="text-[10px] text-zinc-600 mt-0.5 uppercase tracking-wider">
+        {stat.label}
+      </p>
     </div>
   );
 }
@@ -161,16 +204,34 @@ function AnalysisCard({ item, index }: { item: HistoryItem; index: number }) {
 
       {/* Headline */}
       {r?.headline && (
-        <p className="text-sm text-zinc-300 leading-snug mb-3 line-clamp-2">{r.headline}</p>
+        <p className="text-sm text-zinc-300 leading-snug mb-3 line-clamp-2">
+          {r.headline}
+        </p>
       )}
 
       {/* Issue counts */}
       {r && r.totalIssues > 0 && (
         <div className="flex flex-wrap gap-1.5 mb-3">
-          <IssuePill count={r.criticalCount} label="critical" color="bg-red-500/10 border-red-500/20 text-red-400" />
-          <IssuePill count={r.highCount}     label="high"     color="bg-orange-500/10 border-orange-500/20 text-orange-400" />
-          <IssuePill count={r.mediumCount}   label="medium"   color="bg-yellow-500/10 border-yellow-500/20 text-yellow-400" />
-          <IssuePill count={r.lowCount}      label="low"      color="bg-blue-500/10 border-blue-500/20 text-blue-400" />
+          <IssuePill
+            count={r.criticalCount}
+            label="critical"
+            color="bg-red-500/10 border-red-500/20 text-red-400"
+          />
+          <IssuePill
+            count={r.highCount}
+            label="high"
+            color="bg-orange-500/10 border-orange-500/20 text-orange-400"
+          />
+          <IssuePill
+            count={r.mediumCount}
+            label="medium"
+            color="bg-yellow-500/10 border-yellow-500/20 text-yellow-400"
+          />
+          <IssuePill
+            count={r.lowCount}
+            label="low"
+            color="bg-blue-500/10 border-blue-500/20 text-blue-400"
+          />
         </div>
       )}
 
@@ -206,10 +267,11 @@ function AnalysisCard({ item, index }: { item: HistoryItem; index: number }) {
           >
             <Code2 className="w-3.5 h-3.5" />
             {expanded ? "Hide Code" : "View Code"}
-            {expanded
-              ? <ChevronUp className="w-3 h-3" />
-              : <ChevronDown className="w-3 h-3" />
-            }
+            {expanded ? (
+              <ChevronUp className="w-3 h-3" />
+            ) : (
+              <ChevronDown className="w-3 h-3" />
+            )}
           </button>
         )}
       </div>
@@ -269,14 +331,42 @@ export default function HistoryPage() {
       ? items.reduce((s, i) => s + (i.latencyMs ?? 0), 0) / items.length / 1000
       : 0;
 
-  const uniqueLangs = new Set(items.map((i) => i.language).filter(Boolean)).size;
-  const totalIssues = items.reduce((s, i) => s + ((i.report as HistoryReport | null)?.totalIssues ?? 0), 0);
+  const uniqueLangs = new Set(items.map((i) => i.language).filter(Boolean))
+    .size;
+  const totalIssues = items.reduce(
+    (s, i) => s + ((i.report as HistoryReport | null)?.totalIssues ?? 0),
+    0,
+  );
 
   const stats: StatItem[] = [
-    { label: "Total Analyses", value: total.toString(),           icon: BarChart2,  color: "text-indigo-400", bg: "bg-indigo-500/10"  },
-    { label: "Avg Latency",    value: `${avgLatency.toFixed(1)}s`, icon: Timer,      color: "text-violet-400", bg: "bg-violet-500/10"  },
-    { label: "Languages",      value: uniqueLangs.toString(),      icon: Code2,      color: "text-blue-400",   bg: "bg-blue-500/10"    },
-    { label: "Issues Found",   value: totalIssues.toString(),      icon: ScanSearch, color: "text-rose-400",   bg: "bg-rose-500/10"    },
+    {
+      label: "Total Analyses",
+      value: total.toString(),
+      icon: BarChart2,
+      color: "text-indigo-400",
+      bg: "bg-indigo-500/10",
+    },
+    {
+      label: "Avg Latency",
+      value: `${avgLatency.toFixed(1)}s`,
+      icon: Timer,
+      color: "text-violet-400",
+      bg: "bg-violet-500/10",
+    },
+    {
+      label: "Languages",
+      value: uniqueLangs.toString(),
+      icon: Code2,
+      color: "text-blue-400",
+      bg: "bg-blue-500/10",
+    },
+    {
+      label: "Issues Found",
+      value: totalIssues.toString(),
+      icon: ScanSearch,
+      color: "text-rose-400",
+      bg: "bg-rose-500/10",
+    },
   ];
 
   return (
@@ -288,11 +378,13 @@ export default function HistoryPage() {
       </div>
 
       <div className="relative z-10 max-w-4xl mx-auto px-4 py-8">
-
         {/* Header */}
         <header className="flex items-center justify-between mb-8">
           <div className="flex items-center gap-4">
-            <Link href="/app" className="flex items-center gap-1.5 text-zinc-500 hover:text-white transition-colors text-sm">
+            <Link
+              href="/app"
+              className="flex items-center gap-1.5 text-zinc-500 hover:text-white transition-colors text-sm"
+            >
               <ArrowLeft className="w-4 h-4" />
               Back to Analyzer
             </Link>
@@ -309,7 +401,9 @@ export default function HistoryPage() {
             disabled={loading}
             className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-white transition-colors disabled:opacity-40"
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
+            <RefreshCw
+              className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`}
+            />
             Refresh
           </button>
         </header>
@@ -332,9 +426,11 @@ export default function HistoryPage() {
           <AlertTriangle className="w-3.5 h-3.5 text-amber-400 mt-0.5 shrink-0" />
           <p className="text-xs text-amber-300/70">
             All analyses run at{" "}
-            <span className="text-amber-300 font-mono font-semibold">$0.00</span>{" "}
-            using Tier 1 models (≤4B params) via OpenRouter free tier.
-            These are the actual receipts.
+            <span className="text-amber-300 font-mono font-semibold">
+              $0.00
+            </span>{" "}
+            using Tier 1 models (≤4B params) via OpenRouter free tier. These are
+            the actual receipts.
           </p>
         </div>
 
@@ -350,7 +446,9 @@ export default function HistoryPage() {
             <div className="p-4 rounded-full bg-red-500/10 border border-red-500/20 mb-4">
               <AlertTriangle className="w-8 h-8 text-red-400" />
             </div>
-            <p className="text-white font-medium mb-1">Could not load history</p>
+            <p className="text-white font-medium mb-1">
+              Could not load history
+            </p>
             <p className="text-sm text-zinc-500 mb-4">{error}</p>
             <button
               onClick={load}
@@ -364,9 +462,12 @@ export default function HistoryPage() {
             <div className="p-5 rounded-full bg-indigo-500/10 border border-indigo-500/20 mb-4">
               <Sparkles className="w-10 h-10 text-indigo-400" />
             </div>
-            <h2 className="text-xl font-semibold text-white mb-2">No analyses yet</h2>
+            <h2 className="text-xl font-semibold text-white mb-2">
+              No analyses yet
+            </h2>
             <p className="text-sm text-zinc-400 max-w-xs leading-relaxed mb-6">
-              Run your first code analysis to see the history here, including cost receipts and metrics.
+              Run your first code analysis to see the history here, including
+              cost receipts and metrics.
             </p>
             <Link
               href="/app"

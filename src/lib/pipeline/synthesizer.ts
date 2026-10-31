@@ -1,6 +1,6 @@
 import { generateObject } from "ai";
 import { z } from "zod";
-import { openrouter, MODELS } from "@/lib/openrouter";
+import { MODELS, openrouter } from "@/lib/openrouter";
 import type { SpecialistOutput } from "@/lib/pipeline/specialist";
 
 // ─── Helper Functions ────────────────────────────────────────
@@ -12,19 +12,19 @@ import type { SpecialistOutput } from "@/lib/pipeline/specialist";
  */
 function sanitizeToAscii(str: string): string {
   return str
-    .replace(/\u2014/g, "-")    // em dash
-    .replace(/\u2013/g, "-")    // en dash
-    .replace(/\u2018/g, "'")    // left single quote
-    .replace(/\u2019/g, "'")    // right single quote
-    .replace(/\u201C/g, '"')    // left double quote
-    .replace(/\u201D/g, '"')    // right double quote
-    .replace(/\u2026/g, "...")  // ellipsis
-    .replace(/\u2192/g, "->")   // right arrow
-    .replace(/\u2190/g, "<-")   // left arrow
-    .replace(/\u2022/g, "*")    // bullet
+    .replace(/\u2014/g, "-") // em dash
+    .replace(/\u2013/g, "-") // en dash
+    .replace(/\u2018/g, "'") // left single quote
+    .replace(/\u2019/g, "'") // right single quote
+    .replace(/\u201C/g, '"') // left double quote
+    .replace(/\u201D/g, '"') // right double quote
+    .replace(/\u2026/g, "...") // ellipsis
+    .replace(/\u2192/g, "->") // right arrow
+    .replace(/\u2190/g, "<-") // left arrow
+    .replace(/\u2022/g, "*") // bullet
     .replace(/\u2122/g, "(TM)") // trademark
-    .replace(/\u00AE/g, "(R)")  // registered
-    .replace(/\u00A9/g, "(C)")  // copyright
+    .replace(/\u00AE/g, "(R)") // registered
+    .replace(/\u00A9/g, "(C)") // copyright
     .replace(/[^\x00-\x7F]/g, ""); // strip any remaining non-ASCII
 }
 
@@ -32,7 +32,9 @@ function sanitizeToAscii(str: string): string {
 
 export const ReportSchema = z.object({
   overallRisk: z.enum(["critical", "high", "medium", "low", "clean"]),
-  headline: z.string().describe("One punchy sentence summarizing the overall code quality"),
+  headline: z
+    .string()
+    .describe("One punchy sentence summarizing the overall code quality"),
   totalIssues: z.number(),
   criticalCount: z.number(),
   highCount: z.number(),
@@ -58,7 +60,9 @@ export const ReportSchema = z.object({
       ),
     }),
   ),
-  knownLimitations: z.string().describe("Honest note about what this analysis might have missed"),
+  knownLimitations: z
+    .string()
+    .describe("Honest note about what this analysis might have missed"),
 });
 
 export type Report = z.infer<typeof ReportSchema>;
@@ -75,7 +79,9 @@ export async function runSynthesizer(
   specialistOutputs: SpecialistOutput[],
 ): Promise<Report> {
   const allIssues = specialistOutputs.flatMap((s) => s.issues);
-  const criticalCount = allIssues.filter((i) => i.severity === "critical").length;
+  const criticalCount = allIssues.filter(
+    (i) => i.severity === "critical",
+  ).length;
   const highCount = allIssues.filter((i) => i.severity === "high").length;
   const mediumCount = allIssues.filter((i) => i.severity === "medium").length;
   const lowCount = allIssues.filter((i) => i.severity === "low").length;
@@ -109,7 +115,10 @@ export async function runSynthesizer(
       (s) =>
         `### ${s.category.toUpperCase()} (${s.issues.length} issues)\n${sanitizeToAscii(s.summary)}\n` +
         s.issues
-          .map((i) => `- [${i.severity.toUpperCase()}] ${sanitizeToAscii(i.title)}: ${sanitizeToAscii(i.description)}`)
+          .map(
+            (i) =>
+              `- [${i.severity.toUpperCase()}] ${sanitizeToAscii(i.title)}: ${sanitizeToAscii(i.description)}`,
+          )
           .join("\n"),
     )
     .join("\n\n");
@@ -117,7 +126,14 @@ export async function runSynthesizer(
   const sanitizedSpecialistSummary = sanitizeToAscii(specialistSummary);
 
   const FALLBACK: Report = {
-    overallRisk: criticalCount > 0 ? "critical" : highCount > 0 ? "high" : mediumCount > 0 ? "medium" : "low",
+    overallRisk:
+      criticalCount > 0
+        ? "critical"
+        : highCount > 0
+          ? "high"
+          : mediumCount > 0
+            ? "medium"
+            : "low",
     headline: `Found ${allIssues.length} issue(s) across ${specialistOutputs.filter((s) => s.issues.length > 0).length} categories.`,
     totalIssues: allIssues.length,
     criticalCount,
@@ -137,7 +153,8 @@ export async function runSynthesizer(
   };
 
   try {
-    const prompt = sanitizeToAscii(`You are a senior code review lead. You have received reports from specialist reviewers. 
+    const prompt =
+      sanitizeToAscii(`You are a senior code review lead. You have received reports from specialist reviewers. 
 Synthesize them into a final, actionable code review report.
 
 ## Language: ${language}
