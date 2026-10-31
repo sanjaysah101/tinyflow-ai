@@ -1,6 +1,6 @@
 import { generateObject } from "ai";
 import { z } from "zod";
-import { MODELS, openrouter } from "@/lib/openrouter";
+import { FALLBACK_CHAIN, getOtariProvider, MODELS } from "@/lib/openrouter";
 
 // ─── Schemas ────────────────────────────────────────────────
 
@@ -157,16 +157,19 @@ export function runOtariGuardrailsCheck(code: string): GuardrailCheckResult {
 export interface RouterOptions {
   userId?: string;
   userBudget?: number;
+  apiKey?: string;
+  baseUrl?: string;
+  testFallbackMode?: boolean;
 }
 
 /**
  * Step 1: Route the code - detect language and pick review categories,
  * with Otari Guardrails pre-checking for secrets, PII, and prompt injections.
- * Uses open-weight fast model (Llama-3.2-3B) with automated fallback.
+ * Uses open-weight fast model (Qwen 3.5 9B) with automated fallback.
  */
 export async function runRouter(
   code: string,
-  _options?: RouterOptions,
+  options?: RouterOptions,
 ): Promise<RouterOutput> {
   const routerStart = Date.now();
 
@@ -174,7 +177,11 @@ export async function runRouter(
   const guardrails = runOtariGuardrailsCheck(code);
   const effectiveCode = guardrails.sanitizedCode;
 
-  const defaultModel = MODELS.router;
+  const defaultModel = options?.testFallbackMode
+    ? FALLBACK_CHAIN.router[0] || "alibaba/qwen3-30b-a3b-instruct-2507"
+    : MODELS.router;
+  const isFallback = Boolean(options?.testFallbackMode);
+
   const FALLBACK: RouterOutput = {
     language: "javascript",
     categories: ["security", "bugs", "performance", "style"],
@@ -183,7 +190,7 @@ export async function runRouter(
     guardrailActions: guardrails.actions,
     sanitizedCode: effectiveCode,
     modelUsed: defaultModel,
-    fallbackTriggered: false,
+    fallbackTriggered: isFallback,
     costUsd: 0.00002,
     tokensUsed: 60,
     latencyMs: Date.now() - routerStart,
@@ -231,7 +238,7 @@ export async function runRouter(
       guardrailActions: guardrails.actions,
       sanitizedCode: effectiveCode,
       modelUsed: defaultModel,
-      fallbackTriggered: false,
+      fallbackTriggered: isFallback,
       costUsd: 0.00001,
       tokensUsed: 40,
       latencyMs: Date.now() - routerStart,
@@ -240,8 +247,13 @@ export async function runRouter(
 
   // ── Step D: Call Otari Gateway for ambiguous code ──
   try {
+    const provider = getOtariProvider({
+      apiKey: options?.apiKey,
+      baseURL: options?.baseUrl,
+    });
+
     const { object } = await generateObject({
-      model: openrouter(MODELS.router),
+      model: provider(defaultModel),
       schema: z.object({
         language: z.string(),
         categories: z.array(
@@ -271,7 +283,7 @@ ${effectiveCode.slice(0, 1000)}
       guardrailActions: guardrails.actions,
       sanitizedCode: effectiveCode,
       modelUsed: defaultModel,
-      fallbackTriggered: false,
+      fallbackTriggered: isFallback,
       costUsd: 0.00003,
       tokensUsed: 120,
       latencyMs: Date.now() - routerStart,

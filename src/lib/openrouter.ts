@@ -10,6 +10,7 @@ import {
   type CallOtariResult,
   callOtari,
   FALLBACK_CHAIN,
+  getOtariProvider,
   OTARI_MODELS,
   type OtariGuardrailsOptions,
   type OtariMessage,
@@ -36,7 +37,7 @@ export const MODELS = OTARI_MODELS;
 export type ModelKey = keyof typeof MODELS;
 
 // Forward all Otari exports for convenience
-export { otari, OTARI_MODELS, FALLBACK_CHAIN, callOtari };
+export { otari, OTARI_MODELS, FALLBACK_CHAIN, callOtari, getOtariProvider };
 
 export type {
   OtariRole,

@@ -58,6 +58,9 @@ export async function POST(req: Request) {
     language?: string;
     userId?: string;
     userBudgetLimit?: number;
+    testFallbackMode?: boolean;
+    apiKey?: string;
+    baseUrl?: string;
   };
 
   try {
@@ -82,6 +85,20 @@ export async function POST(req: Request) {
       },
     );
   }
+
+  // ── BYOK (Bring Your Own Key) & Gateway Base URL Resolution ──
+  const byokApiKey =
+    req.headers.get("x-otari-api-key") || body.apiKey || undefined;
+  const byokBaseUrl =
+    req.headers.get("x-otari-base-url") || body.baseUrl || undefined;
+  const testFallbackMode =
+    body.testFallbackMode ?? req.headers.get("x-test-fallback-mode") === "true";
+
+  const authTier = byokApiKey
+    ? "byok"
+    : process.env.OTARI_API_KEY
+      ? "server_otari"
+      : "failover_gateway";
 
   // ── Per-User Budget & Spend Limit Enforcement ──
   const userId =
@@ -139,12 +156,15 @@ export async function POST(req: Request) {
           step: "routing",
           message:
             "Otari Router: checking guardrails & detecting review categories…",
-          model: "Llama-3.2-3B",
+          model: "Qwen-3.5-9B",
         });
 
         const routerOutput = await runRouter(cleanCode, {
           userId,
           userBudget: userBudgetLimit,
+          apiKey: byokApiKey,
+          baseUrl: byokBaseUrl,
+          testFallbackMode,
         });
 
         const language = hintedLanguage || routerOutput.language;
@@ -156,6 +176,7 @@ export async function POST(req: Request) {
           guardrailTriggered: routerOutput.guardrailTriggered,
           guardrailActions: routerOutput.guardrailActions,
           otari_telemetry: {
+            authTier,
             guardrails: {
               passed: !routerOutput.guardrailTriggered,
               actions: routerOutput.guardrailActions,
@@ -168,7 +189,7 @@ export async function POST(req: Request) {
         emit("step", {
           step: "analyzing",
           message: `Running ${routerOutput.categories.length} Otari Specialists in parallel (CVE Web Search & Code Sandbox active)…`,
-          model: "Qwen-2.5-Coder-7B",
+          model: "Qwen-3-32B",
           categories: routerOutput.categories,
         });
 
@@ -178,7 +199,13 @@ export async function POST(req: Request) {
             "security" | "bugs" | "performance" | "style"
           >,
           language,
-          { userId, userBudget: userBudgetLimit },
+          {
+            userId,
+            userBudget: userBudgetLimit,
+            apiKey: byokApiKey,
+            baseUrl: byokBaseUrl,
+            testFallbackMode,
+          },
         );
 
         const allSandboxRuns = specialistOutputs.flatMap((s) => s.sandboxRuns);
@@ -198,6 +225,7 @@ export async function POST(req: Request) {
             webQueriesCount: s.webSearchQueries.length,
           })),
           otari_telemetry: {
+            authTier,
             codeExecutionRuns: allSandboxRuns,
             webSearchQueries: allWebSearchQueries,
           },
@@ -208,14 +236,20 @@ export async function POST(req: Request) {
           step: "synthesizing",
           message:
             "Otari Synthesizer: combining findings with verified assertions…",
-          model: "Mistral-7B",
+          model: "Qwen-3.6-35B-MoE",
         });
 
         const report = await runSynthesizer(
           effectiveCode,
           language,
           specialistOutputs,
-          { userId, userBudget: userBudgetLimit },
+          {
+            userId,
+            userBudget: userBudgetLimit,
+            apiKey: byokApiKey,
+            baseUrl: byokBaseUrl,
+            testFallbackMode,
+          },
         );
 
         const latencyMs = Date.now() - analysisStart;
@@ -247,6 +281,7 @@ export async function POST(req: Request) {
           (report.fallbackTriggered ? 1 : 0);
 
         const otariTelemetry = {
+          authTier,
           modelsByRole: {
             router: routerOutput.modelUsed,
             specialists: specialistOutputs.map((s) => ({
@@ -255,8 +290,7 @@ export async function POST(req: Request) {
               fallback: s.fallbackTriggered,
               tools: s.toolsInvoked,
             })),
-            synthesizer:
-              report.modelUsed || "mistralai/Mistral-7B-Instruct-v0.3",
+            synthesizer: report.modelUsed || "alibaba/qwen3.6-35b-a3b",
           },
           fallbacksTriggered: totalFallbacks,
           codeExecutionRuns: allSandboxRuns,
@@ -287,9 +321,8 @@ export async function POST(req: Request) {
             report: reportWithTelemetry as unknown as Record<string, unknown>,
             modelsUsed: [
               routerOutput.modelUsed,
-              specialistOutputs[0]?.modelUsed ||
-                "Qwen/Qwen2.5-Coder-7B-Instruct",
-              report.modelUsed || "mistralai/Mistral-7B-Instruct-v0.3",
+              specialistOutputs[0]?.modelUsed || "alibaba/qwen3-32b",
+              report.modelUsed || "alibaba/qwen3.6-35b-a3b",
             ],
             totalTokens,
             latencyMs,
@@ -308,19 +341,17 @@ export async function POST(req: Request) {
               {
                 name: routerOutput.modelUsed,
                 role: "Router (Otari)",
-                params: "3B",
+                params: "9B",
               },
               {
-                name:
-                  specialistOutputs[0]?.modelUsed ||
-                  "Qwen/Qwen2.5-Coder-7B-Instruct",
+                name: specialistOutputs[0]?.modelUsed || "alibaba/qwen3-32b",
                 role: "Specialist (Otari)",
-                params: "7B",
+                params: "32B",
               },
               {
-                name: report.modelUsed || "mistralai/Mistral-7B-Instruct-v0.3",
+                name: report.modelUsed || "alibaba/qwen3.6-35b-a3b",
                 role: "Synthesizer (Otari)",
-                params: "7B",
+                params: "35B MoE",
               },
             ],
             tier: "Open-Weight (Mozilla Otari Gateway)",

@@ -98,9 +98,10 @@ OTARI_BASE_URL=https://api.otari.ai/v1
 OTARI_USER_BUDGET_LIMIT_USD=1.00
 
 # Open-Weight Model Registry (Optional Overrides)
-OTARI_ROUTER_MODEL=meta-llama/llama-3.2-3b-instruct
-OTARI_SPECIALIST_MODEL=Qwen/Qwen2.5-Coder-7B-Instruct
-OTARI_SYNTHESIZER_MODEL=mistralai/Mistral-7B-Instruct-v0.3
+OTARI_ROUTER_MODEL=alibaba/qwen3.5-9b
+OTARI_SPECIALIST_MODEL=alibaba/qwen3-32b
+OTARI_SYNTHESIZER_MODEL=alibaba/qwen3.6-35b-a3b
+OTARI_EMBEDDING_MODEL=alibaba/qwen3-embedding-0.6b
 
 # Database & Vectors
 DATABASE_URL=postgresql://postgres:[password]@[host]:5432/postgres
@@ -124,10 +125,10 @@ pnpm run db:seed
 
 | Role | Primary Open-Weight Model | Fallback Open-Weight Model | Capabilities & Tools |
 |---|---|---|---|
-| **Router** | `meta-llama/llama-3.2-3b-instruct` | `meta-llama/llama-3.1-8b-instruct` | Language routing, Otari Guardrails pre-check |
-| **Specialist** | `Qwen/Qwen2.5-Coder-7B-Instruct` | `qwen/qwen-2.5-coder-32b-instruct` | `code_execution` (microVM), `web_search` (CVEs) |
-| **Synthesizer** | `mistralai/Mistral-7B-Instruct-v0.3` | `deepseek-ai/DeepSeek-R1-Distill-Qwen-14B` | Cross-specialist synthesis, deduplication, schema validation |
-| **Embedding** | `nomic-ai/nomic-embed-text-v1.5` | `nomic-ai/nomic-embed-text-v1.5` | 768-dim vector embeddings for RAG retrieval |
+| **Router** | `alibaba/qwen3.5-9b` | `alibaba/qwen3-30b-a3b-instruct-2507` | Language routing, Otari Guardrails pre-check ($0.10/M) |
+| **Specialist** | `alibaba/qwen3-32b` | `alibaba/qwen3-coder-480b-a35b-instruct-turbo` | `code_execution` (microVM), `web_search` (CVEs) ($0.08/M) |
+| **Synthesizer** | `alibaba/qwen3.6-35b-a3b` | `alibaba/qwen3.5-27b` | Cross-specialist synthesis, deduplication, schema validation ($0.10/M) |
+| **Embedding** | `alibaba/qwen3-embedding-0.6b` | `nomic-ai/nomic-embed-text-v1.5` | High-dimensional embeddings for RAG retrieval ($0.01/M) |
 
 ---
 
@@ -139,20 +140,21 @@ User Code Input
       ▼
 ┌─────────────────────────────────────────────────────────────┐
 │              Mozilla Otari AI Gateway Router                │
-│             (meta-llama/llama-3.2-3b-instruct)              │
+│                   (alibaba/qwen3.5-9b)                      │
 │  - Guardrails pre-check (leaked API secrets & injection)   │
 │  - Language classification & specialist routing             │
+│  - 3-Tier BYOK Failover: BYOK -> Server Otari -> OpenRouter │
 │  - Per-user budget validation (HTTP 429 lock if capped)     │
 └──────────────────────────────┬──────────────────────────────┘
                                │
       ┌────────────────────────▼────────────────────────┐
-      │          RAG: nomic-embed-text-v1.5             │
+      │          RAG: alibaba/qwen3-embedding           │
       │  Retrieves 24 vulnerability patterns via pgvector│
       └────────────────────────┬────────────────────────┘
                                │
       ┌────────────────────────▼────────────────────────┐
-      │   Parallel Specialists: Qwen 2.5 Coder 7B       │
-      │   (Automatic fallback to Qwen 2.5 Coder 32B)    │
+      │       Parallel Specialists: Qwen 3 32B          │
+      │  (Automatic fallback to Qwen 3 Coder 480B Turbo)│
       ├────────────────────────┬────────────────────────┤
       │ Security Specialist    │ Bugs Specialist        │
       │ ↳ Tool: web_search     │ ↳ Tool: code_execution │
@@ -160,14 +162,18 @@ User Code Input
       └────────────────────────┬────────────────────────┘
                                │
       ┌────────────────────────▼────────────────────────┐
-      │           Synthesizer: Mistral 7B               │
-      │  (Automatic fallback to DeepSeek R1 Distill)    │
+      │          Synthesizer: Qwen 3.6 35B MoE          │
+      │     (Automatic fallback to Qwen 3.5 27B)        │
       │  - Unifies sandbox verified proofs & CVE data   │
       │  - Validates structured Zod schema              │
       └────────────────────────┬────────────────────────┘
                                │
       ┌────────────────────────▼────────────────────────┐
       │      SSE Telemetry & Postgres Persistence       │
+      │  - Streamed audit trail: models, tools, spend   │
+      │  - Audited history stored in analysis_history   │
+      └─────────────────────────────────────────────────┘
+```
       │  - Streamed audit trail: models, tools, spend   │
       │  - Audited history stored in analysis_history   │
       └─────────────────────────────────────────────────┘

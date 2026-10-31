@@ -14,13 +14,16 @@ import {
   Copy,
   Cpu,
   DollarSign,
+  Eye,
+  EyeOff,
   FlaskConical,
   Globe,
   History,
-  Info,
+  Key,
   Layers,
   Lightbulb,
   Lock,
+  RefreshCw,
   RotateCcw,
   Route,
   Search,
@@ -31,10 +34,11 @@ import {
   Sparkles,
   Target,
   Terminal,
+  X,
   Zap,
 } from "lucide-react";
 import Link from "next/link";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -96,10 +100,16 @@ interface Metrics {
 }
 
 interface OtariTelemetry {
+  authTier?: "byok" | "server_otari" | "failover_gateway";
   gatewayUrl?: string;
   modelsByRole?: {
     router: string;
-    specialists: string[];
+    specialists: Array<{
+      category: string;
+      model: string;
+      fallback?: boolean;
+      tools?: string[];
+    }>;
     synthesizer: string;
   };
   fallbacksTriggered?: number;
@@ -209,25 +219,25 @@ const PIPELINE_STEPS: Array<{
   {
     id: "routing",
     label: "Guardrails & Route",
-    model: "meta-llama/llama-3.2-3b-instruct",
+    model: "alibaba/qwen3.5-9b",
     icon: Route,
   },
   {
     id: "retrieving",
     label: "RAG Retrieval",
-    model: "nomic-embed-text-v1.5",
+    model: "alibaba/qwen3-embedding-0.6b",
     icon: Search,
   },
   {
     id: "analyzing",
     label: "Specialists + Tools",
-    model: "Qwen/Qwen2.5-Coder-7B-Instruct",
+    model: "alibaba/qwen3-32b",
     icon: FlaskConical,
   },
   {
     id: "synthesizing",
     label: "Otari Synthesis",
-    model: "mistralai/Mistral-7B-Instruct-v0.3",
+    model: "alibaba/qwen3.6-35b-a3b",
     icon: Layers,
   },
   { id: "done", label: "Complete", model: "", icon: CheckCircle2 },
@@ -339,7 +349,7 @@ function IssueCard({
             className="overflow-hidden"
           >
             <div className="mt-3 pt-3 border-t border-white/5 space-y-3">
-              <p className="text-xs text-zinc-300 leading-relaxed">
+              <p className="text-xs text-zinc-300 leading-relaxed whitespace-pre-wrap">
                 {issue.description}
               </p>
 
@@ -436,6 +446,89 @@ export default function AppPage() {
   );
   const [guardrailAlerts, setGuardrailAlerts] = useState<string[]>([]);
 
+  // ─── BYOK (Bring Your Own Key) State ────────────────────────
+  const [byokModalOpen, setByokModalOpen] = useState(false);
+  const [byokApiKey, setByokApiKey] = useState("");
+  const [byokBaseUrl, setByokBaseUrl] = useState("https://api.otari.ai/v1");
+  const [showKey, setShowKey] = useState(false);
+  const [isByokActive, setIsByokActive] = useState(false);
+  const [byokTestStatus, setByokTestStatus] = useState<string | null>(null);
+  const [testingConnection, setTestingConnection] = useState(false);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const savedKey = localStorage.getItem("tinyflow_byok_api_key") || "";
+      const savedUrl =
+        localStorage.getItem("tinyflow_byok_base_url") ||
+        "https://api.otari.ai/v1";
+      if (savedKey) {
+        setByokApiKey(savedKey);
+        setIsByokActive(true);
+      }
+      if (savedUrl) {
+        setByokBaseUrl(savedUrl);
+      }
+    }
+  }, []);
+
+  const handleSaveByok = () => {
+    if (typeof window !== "undefined") {
+      if (byokApiKey.trim()) {
+        localStorage.setItem("tinyflow_byok_api_key", byokApiKey.trim());
+        localStorage.setItem("tinyflow_byok_base_url", byokBaseUrl.trim());
+        setIsByokActive(true);
+      } else {
+        localStorage.removeItem("tinyflow_byok_api_key");
+        localStorage.removeItem("tinyflow_byok_base_url");
+        setIsByokActive(false);
+      }
+    }
+    setByokModalOpen(false);
+  };
+
+  const handleClearByok = () => {
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("tinyflow_byok_api_key");
+      localStorage.removeItem("tinyflow_byok_base_url");
+    }
+    setByokApiKey("");
+    setByokBaseUrl("https://api.otari.ai/v1");
+    setIsByokActive(false);
+    setByokTestStatus(null);
+  };
+
+  const handleTestConnection = async () => {
+    setTestingConnection(true);
+    setByokTestStatus(null);
+    try {
+      const headers: Record<string, string> = {};
+      if (byokApiKey) headers["x-otari-api-key"] = byokApiKey.trim();
+      if (byokBaseUrl) headers["x-otari-base-url"] = byokBaseUrl.trim();
+
+      const res = await fetch("/api/models", { headers });
+      const data = await res.json();
+      if (res.ok && data.status === "connected") {
+        setByokTestStatus(
+          `Connected! Found ${data.modelsCount} models on ${data.gateway}.`,
+        );
+      } else if (res.ok) {
+        setByokTestStatus(
+          `Gateway reachable (${data.modelsCount} models in open-weight catalog).`,
+        );
+      } else {
+        setByokTestStatus(
+          `Gateway error: ${data.error || "Could not verify credentials"}`,
+        );
+      }
+    } catch (err: unknown) {
+      setByokTestStatus(
+        `Connection error: ${(err as Error)?.message || String(err)}`,
+      );
+    } finally {
+      setTestingConnection(false);
+    }
+  };
+
   const handleAnalyze = useCallback(async () => {
     if (!code.trim()) return;
     setReport(null);
@@ -448,18 +541,24 @@ export default function AppPage() {
     setStepMessage("Initializing Mozilla Otari AI Gateway & Guardrails check…");
 
     try {
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+        "x-user-id": "demo-user-1",
+        "x-user-budget-limit": (userLimit || 0.5).toString(),
+      };
+      if (byokApiKey) headers["x-otari-api-key"] = byokApiKey.trim();
+      if (byokBaseUrl) headers["x-otari-base-url"] = byokBaseUrl.trim();
+
       const res = await fetch("/api/analyze", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-user-id": "demo-user-1",
-          "x-user-budget-limit": userLimit.toString(),
-        },
+        headers,
         body: JSON.stringify({
           code,
           userId: "demo-user-1",
-          userBudgetLimit: userLimit,
+          userBudgetLimit: userLimit || 0.5,
           testFallbackMode: featureModelPreset === "fallback",
+          apiKey: byokApiKey || undefined,
+          baseUrl: byokBaseUrl || undefined,
         }),
       });
 
@@ -528,6 +627,9 @@ export default function AppPage() {
                   if (data.otari_telemetry.budget?.userSpentUsd != null) {
                     setUserSpend(data.otari_telemetry.budget.userSpentUsd);
                   }
+                  if (data.otari_telemetry.budget?.userLimitUsd != null) {
+                    setUserLimit(data.otari_telemetry.budget.userLimitUsd);
+                  }
                 }
                 setActiveCategory(
                   data.report.categories[0]?.name ?? "security",
@@ -556,7 +658,7 @@ export default function AppPage() {
       setError(String(err));
       setPipelineStep("error");
     }
-  }, [code, featureModelPreset, userLimit]);
+  }, [code, featureModelPreset, userLimit, byokApiKey, byokBaseUrl]);
 
   const handleNewAnalysis = useCallback(() => {
     setReport(null);
@@ -616,6 +718,25 @@ export default function AppPage() {
               </div>
             </div>
             <div className="flex items-center gap-3">
+              {/* BYOK Config Trigger Button */}
+              <button
+                type="button"
+                onClick={() => setByokModalOpen(true)}
+                className="flex items-center gap-1.5 text-xs font-mono px-3 py-1.5 rounded-lg border bg-white/5 hover:bg-white/10 text-white transition-colors border-white/10 hover:border-indigo-500/40"
+              >
+                <Key className="w-3.5 h-3.5 text-amber-400" />
+                <span className="hidden sm:inline">BYOK Config</span>
+                {isByokActive ? (
+                  <span className="text-[10px] px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                    BYOK Active
+                  </span>
+                ) : (
+                  <span className="text-[10px] text-zinc-500 hidden md:inline">
+                    Default
+                  </span>
+                )}
+              </button>
+
               <Link
                 href="/app/history"
                 className="flex items-center gap-1.5 text-xs text-zinc-500 hover:text-white transition-colors px-3 py-1.5 rounded-lg hover:bg-white/5 border border-transparent hover:border-white/10"
@@ -623,10 +744,11 @@ export default function AppPage() {
                 <History className="w-3.5 h-3.5" />
                 <span className="hidden sm:block">History</span>
               </Link>
+
               <div className="flex items-center gap-2 text-xs font-mono">
                 <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                  Otari Gateway Online
+                  Otari Online
                 </span>
               </div>
             </div>
@@ -648,14 +770,19 @@ export default function AppPage() {
                 <span className="text-[11px] text-zinc-400 font-mono">
                   Endpoint:
                 </span>
-                <span className="text-[11px] font-mono text-indigo-300 bg-indigo-500/10 px-2 py-0.5 rounded border border-indigo-500/20">
-                  https://api.otari.ai/v1
+                <span className="text-[11px] font-mono text-indigo-300 bg-indigo-500/10 px-2 py-0.5 rounded border border-indigo-500/20 truncate max-w-[260px]">
+                  {byokBaseUrl}
                 </span>
+                {isByokActive && (
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 flex items-center gap-1">
+                    <Check className="w-3 h-3" /> Using Custom BYOK Key
+                  </span>
+                )}
               </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 pt-3">
-              {/* Control 1: Model Preset & Fallback Mode */}
+              {/* Control 1: Model Preset & Fallback Mode with Clean Wrapping */}
               <div className="bg-white/[0.02] border border-white/5 rounded-xl p-3 flex flex-col justify-between">
                 <div>
                   <div className="flex items-center justify-between mb-1">
@@ -666,11 +793,17 @@ export default function AppPage() {
                       Open-Weight
                     </span>
                   </div>
-                  <p className="text-xs text-white font-mono truncate">
-                    {featureModelPreset === "default"
-                      ? "Llama 3.2 → Qwen 2.5 → Mistral"
-                      : "Failover / Fallback Chain Active"}
-                  </p>
+                  <div className="flex flex-wrap gap-1 mt-1 text-[10px] font-mono">
+                    <span className="px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-300 border border-blue-500/20">
+                      Router: qwen3.5-9b
+                    </span>
+                    <span className="px-1.5 py-0.5 rounded bg-indigo-500/10 text-indigo-300 border border-indigo-500/20">
+                      Spec: qwen3-32b
+                    </span>
+                    <span className="px-1.5 py-0.5 rounded bg-violet-500/10 text-violet-300 border border-violet-500/20">
+                      Synth: qwen3.6-35b
+                    </span>
+                  </div>
                 </div>
                 <div className="mt-2.5 flex gap-1.5">
                   <button
@@ -709,7 +842,7 @@ export default function AppPage() {
                   </div>
                   <p className="text-xs text-white">Sandbox Verification</p>
                   <p className="text-[10px] text-zinc-500 mt-0.5">
-                    MicroVM execution for loop & regex bugs
+                    MicroVM execution for loop & logic bugs
                   </p>
                 </div>
                 <div className="mt-2.5">
@@ -770,7 +903,7 @@ export default function AppPage() {
                 </div>
               </div>
 
-              {/* Control 4: Per-User Budget Simulator */}
+              {/* Control 4: Per-User Budget Simulator with Fixed Initial Cap */}
               <div className="bg-white/[0.02] border border-white/5 rounded-xl p-3 flex flex-col justify-between">
                 <div>
                   <div className="flex items-center justify-between mb-1">
@@ -784,17 +917,22 @@ export default function AppPage() {
                       ${userSpend.toFixed(3)}
                     </p>
                     <span className="text-[10px] font-mono text-zinc-400">
-                      Cap: ${userLimit.toFixed(2)}
+                      Cap: ${(userLimit || 0.5).toFixed(2)}
                     </span>
                   </div>
                   {/* Budget bar */}
                   <div className="w-full bg-white/10 h-1.5 rounded-full overflow-hidden mt-1.5">
                     <div
                       className={`h-full rounded-full transition-all duration-300 ${
-                        userSpend >= userLimit ? "bg-red-500" : "bg-emerald-400"
+                        userSpend >= (userLimit || 0.5)
+                          ? "bg-red-500"
+                          : "bg-emerald-400"
                       }`}
                       style={{
-                        width: `${Math.min(100, (userSpend / Math.max(userLimit, 0.001)) * 100)}%`,
+                        width: `${Math.min(
+                          100,
+                          (userSpend / Math.max(userLimit || 0.5, 0.001)) * 100,
+                        )}%`,
                       }}
                     />
                   </div>
@@ -824,6 +962,145 @@ export default function AppPage() {
               </div>
             </div>
           </div>
+
+          {/* BYOK Configuration Modal */}
+          <AnimatePresence>
+            {byokModalOpen && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.95 }}
+                  className="bg-[#121217] border border-white/15 rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4"
+                >
+                  <div className="flex items-center justify-between pb-3 border-b border-white/10">
+                    <div className="flex items-center gap-2">
+                      <Key className="w-5 h-5 text-amber-400" />
+                      <div>
+                        <h3 className="font-semibold text-white text-base">
+                          Judge-Proof BYOK & Gateway Config
+                        </h3>
+                        <p className="text-xs text-zinc-400">
+                          Bring Your Own Key or switch between gateways
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setByokModalOpen(false)}
+                      className="p-1 rounded-lg text-zinc-400 hover:text-white hover:bg-white/10 transition-colors"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  <div className="space-y-3">
+                    <div>
+                      <label className="text-xs font-medium text-zinc-300 block mb-1">
+                        Otari API Key (or OpenRouter Key)
+                      </label>
+                      <div className="relative">
+                        <input
+                          type={showKey ? "text" : "password"}
+                          value={byokApiKey}
+                          onChange={(e) => setByokApiKey(e.target.value)}
+                          placeholder="otari_... or sk-..."
+                          className="w-full bg-black/40 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs font-mono text-white placeholder:text-zinc-600 outline-none focus:border-indigo-500 pr-10"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowKey(!showKey)}
+                          className="absolute right-2.5 top-2.5 text-zinc-500 hover:text-white transition-colors"
+                        >
+                          {showKey ? (
+                            <EyeOff className="w-4 h-4" />
+                          ) : (
+                            <Eye className="w-4 h-4" />
+                          )}
+                        </button>
+                      </div>
+                      <p className="text-[11px] text-zinc-500 mt-1">
+                        Saved only in your browser&apos;s localStorage. Never
+                        sent to third parties.
+                      </p>
+                    </div>
+
+                    <div>
+                      <label className="text-xs font-medium text-zinc-300 block mb-1">
+                        Gateway Base URL
+                      </label>
+                      <input
+                        type="text"
+                        value={byokBaseUrl}
+                        onChange={(e) => setByokBaseUrl(e.target.value)}
+                        placeholder="https://api.otari.ai/v1"
+                        className="w-full bg-black/40 border border-white/10 rounded-xl px-3.5 py-2 text-xs font-mono text-white placeholder:text-zinc-600 outline-none focus:border-indigo-500"
+                      />
+                      <div className="flex gap-2 mt-1.5">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setByokBaseUrl("https://api.otari.ai/v1")
+                          }
+                          className="text-[10px] font-mono px-2 py-0.5 rounded bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 hover:bg-indigo-500/20 transition-colors"
+                        >
+                          Otari (api.otari.ai/v1)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setByokBaseUrl("https://openrouter.ai/api/v1")
+                          }
+                          className="text-[10px] font-mono px-2 py-0.5 rounded bg-violet-500/10 text-violet-300 border border-violet-500/20 hover:bg-violet-500/20 transition-colors"
+                        >
+                          OpenRouter Failover
+                        </button>
+                      </div>
+                    </div>
+
+                    {byokTestStatus && (
+                      <div className="p-2.5 rounded-lg bg-black/40 border border-white/10 text-xs font-mono text-zinc-300">
+                        {byokTestStatus}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="pt-3 border-t border-white/10 flex items-center justify-between gap-2">
+                    <button
+                      type="button"
+                      onClick={handleTestConnection}
+                      disabled={testingConnection}
+                      className="flex items-center gap-1.5 px-3 py-2 bg-white/5 hover:bg-white/10 text-zinc-300 rounded-xl text-xs font-medium transition-colors border border-white/10"
+                    >
+                      <RefreshCw
+                        className={`w-3.5 h-3.5 ${testingConnection ? "animate-spin" : ""}`}
+                      />
+                      Test Connection
+                    </button>
+
+                    <div className="flex items-center gap-2">
+                      {isByokActive && (
+                        <button
+                          type="button"
+                          onClick={handleClearByok}
+                          className="px-3 py-2 text-xs text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-xl transition-colors"
+                        >
+                          Clear Key
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={handleSaveByok}
+                        className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-medium transition-colors shadow-lg shadow-indigo-950/50"
+                      >
+                        Save Configuration
+                      </button>
+                    </div>
+                  </div>
+                </motion.div>
+              </div>
+            )}
+          </AnimatePresence>
 
           {/* Budget 429 Alert Banner */}
           {budgetExceededAlert && (
@@ -1157,6 +1434,17 @@ export default function AppPage() {
                           {otariTelemetry.fallbacksTriggered ?? 0} triggered
                         </span>
                       </div>
+                      {otariTelemetry.authTier && (
+                        <div className="flex items-center justify-between text-xs pt-1 border-t border-white/5">
+                          <span className="text-zinc-400 flex items-center gap-1.5">
+                            <Key className="w-3 h-3 text-indigo-400" />
+                            Auth Gateway Tier:
+                          </span>
+                          <span className="font-mono text-indigo-300 uppercase">
+                            {otariTelemetry.authTier}
+                          </span>
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -1209,8 +1497,8 @@ export default function AppPage() {
                   </h2>
                   <p className="text-sm text-zinc-400 max-w-sm leading-relaxed">
                     Paste your code on the left and click Analyze. Mozilla Otari
-                    AI Gateway routes through Llama 3.2, Qwen 2.5 Coder, and
-                    Mistral 7B with runtime verification.
+                    AI Gateway routes through Qwen 3.5 9B, Qwen 3 32B, and Qwen
+                    3.6 35B with microVM runtime verification.
                   </p>
                   <div className="mt-6 grid grid-cols-2 gap-3 w-full max-w-xs">
                     {[
@@ -1411,11 +1699,27 @@ export default function AppPage() {
                     </Tabs>
                   </div>
 
-                  {/* Known limitations */}
-                  <div className="flex items-start gap-2 text-xs text-zinc-500 bg-white/[0.02] border border-white/10 rounded-xl p-3">
-                    <Info className="w-3.5 h-3.5 flex-shrink-0 mt-0.5 text-zinc-600" />
-                    <p>{report.knownLimitations}</p>
-                  </div>
+                  {/* Synthesis / Pipeline Status */}
+                  {report.knownLimitations
+                    .toLowerCase()
+                    .includes("fallback active") ? (
+                    <div className="flex items-start gap-2 text-xs text-amber-400/80 bg-amber-500/5 border border-amber-500/20 rounded-xl p-3">
+                      <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5 text-amber-400" />
+                      <p>{report.knownLimitations}</p>
+                    </div>
+                  ) : (
+                    <div className="flex items-start gap-2 text-xs text-emerald-400/90 bg-emerald-500/5 border border-emerald-500/20 rounded-xl p-3">
+                      <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0 mt-0.5 text-emerald-400" />
+                      <div>
+                        <span className="font-semibold text-emerald-300 font-mono block">
+                          Synthesized by Otari Open-Weight Pipeline
+                        </span>
+                        <p className="text-zinc-400 mt-0.5">
+                          {report.knownLimitations}
+                        </p>
+                      </div>
+                    </div>
+                  )}
                 </motion.div>
               )}
             </div>

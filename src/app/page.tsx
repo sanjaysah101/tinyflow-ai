@@ -12,8 +12,14 @@ export const metadata: Metadata = {
 
 const OTARI_FEATURES = [
   {
+    title: "Judge-Proof 3-Tier BYOK",
+    desc: "Bring your own Otari or OpenRouter API key directly in the UI. 3-tier failover (BYOK -> Workspace Key -> Secondary Gateway) guarantees zero credit exhaustion during live demos.",
+    icon: "🔑",
+    badge: "BYOK Enabled",
+  },
+  {
     title: "Multi-Model Fallback Chains",
-    desc: "Never suffer API downtime. The Otari Gateway automatically catches 429s and timeouts, cascading from primary open-weight models (Llama 3.2, Qwen 2.5 Coder, Mistral 7B) to secondary fallbacks without dropping pipeline state.",
+    desc: "Never suffer API downtime. The Otari Gateway automatically catches 429s and timeouts, cascading from primary open-weight models (Qwen 3.5 9B, Qwen 3 32B, Qwen 3.6 35B) to secondary fallbacks without dropping pipeline state.",
     icon: "🔀",
     badge: "Zero Downtime",
   },
@@ -51,33 +57,33 @@ const OTARI_FEATURES = [
 
 const MODELS = [
   {
-    name: "Llama 3.2 3B Instruct",
+    name: "Qwen 3.5 9B",
     role: "Router & Guardrails",
-    fallback: "meta-llama/llama-3.1-8b-instruct",
-    desc: "Classifies languages, selects relevant specialist categories, and executes safety guardrail pre-flight inspection.",
-    params: "3B params",
+    fallback: "alibaba/qwen3-30b-a3b-instruct-2507",
+    desc: "Classifies languages, selects relevant specialist categories, and executes safety guardrail pre-flight inspection ($0.10/M).",
+    params: "9B params",
     badge: "⚡ Fast Open-Weight",
     color: "from-blue-500/20 to-blue-600/10",
     border: "border-blue-500/20",
     badgeColor: "text-blue-400",
   },
   {
-    name: "Qwen 2.5 Coder 7B",
+    name: "Qwen 3 32B Dense",
     role: "Code Specialist + Sandbox",
-    fallback: "qwen/qwen-2.5-coder-32b-instruct",
-    desc: "Code-specialized open-weight model with Otari microVM code execution and live CVE web search tools enabled.",
-    params: "7B params",
+    fallback: "alibaba/qwen3-coder-480b-a35b-instruct-turbo",
+    desc: "Code-specialized open-weight dense model with Otari microVM code execution and live CVE web search tools enabled ($0.08/M).",
+    params: "32B params",
     badge: "🔬 Tool-Equipped Specialist",
     color: "from-indigo-500/20 to-indigo-600/10",
     border: "border-indigo-500/20",
     badgeColor: "text-indigo-400",
   },
   {
-    name: "Mistral 7B Instruct v0.3",
+    name: "Qwen 3.6 35B MoE",
     role: "Synthesizer & Auditor",
-    fallback: "deepseek-ai/DeepSeek-R1-Distill-Qwen-14B",
-    desc: "Synthesizes parallel specialist findings, verifies sandbox results, deduplicates issues, and outputs a strictly validated JSON report.",
-    params: "7B params",
+    fallback: "alibaba/qwen3.5-27b",
+    desc: "Synthesizes parallel specialist findings, verifies sandbox results, deduplicates issues, and outputs a strictly validated JSON report ($0.10/M).",
+    params: "35B MoE",
     badge: "🏆 CoT Synthesizer",
     color: "from-violet-500/20 to-violet-600/10",
     border: "border-violet-500/20",
@@ -89,25 +95,25 @@ const STEPS = [
   {
     num: "01",
     title: "Otari Guardrails & Route",
-    desc: "Llama 3.2 inspects the snippet for leaked secrets and prompt injection comments, redacts threats, and selects active specialist domains.",
+    desc: "Qwen 3.5 9B inspects the snippet for leaked secrets and prompt injection comments, redacts threats, and selects active specialist domains.",
     icon: "🛡️",
   },
   {
     num: "02",
     title: "RAG Pattern Retrieval",
-    desc: "Nomic embed text retrieves verified vulnerability patterns from pgvector to ground subsequent specialist prompts.",
+    desc: "Qwen 3 embedding model retrieves verified vulnerability patterns from pgvector to ground subsequent specialist prompts.",
     icon: "🔍",
   },
   {
     num: "03",
     title: "Tool-Equipped Specialists in Parallel",
-    desc: "Qwen 2.5 Coder runs parallel reviews. Security runs Otari web_search for CVE advisories; Bugs runs Otari code_execution sandbox assertions.",
+    desc: "Qwen 3 32B runs parallel reviews. Security runs Otari web_search for CVE advisories; Bugs runs Otari code_execution sandbox assertions.",
     icon: "⚡",
   },
   {
     num: "04",
-    title: "Mistral 7B Synthesis",
-    desc: "Mistral 7B unifies specialist outputs, incorporates sandbox run proofs, and generates a structured, prioritized report.",
+    title: "Qwen 3.6 35B MoE Synthesis",
+    desc: "Qwen 3.6 35B unifies specialist outputs, incorporates sandbox run proofs, and generates a structured, prioritized report.",
     icon: "⚗️",
   },
   {
@@ -498,8 +504,8 @@ export default function LandingPage() {
                 Source
               </p>
               <p className="mt-1 text-zinc-500">
-                Gateway: https://api.otari.ai/v1 · Models: Llama 3.2 · Qwen 2.5
-                Coder · Mistral 7B
+                Gateway: https://api.otari.ai/v1 · Models: Qwen 3.5 9B · Qwen 3
+                32B · Qwen 3.6 35B MoE
               </p>
             </div>
             <div className="flex items-center gap-4">

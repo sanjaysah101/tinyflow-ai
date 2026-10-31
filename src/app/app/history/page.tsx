@@ -45,6 +45,7 @@ interface HistoryReport {
     guardrailsPassed: boolean;
   };
   otari_telemetry?: {
+    authTier?: "byok" | "server_otari" | "failover_gateway" | string;
     gatewayUrl?: string;
     modelsByRole?: {
       router?: string;
@@ -229,15 +230,17 @@ function AnalysisCard({ item, index }: { item: HistoryItem; index: number }) {
   const routerModel =
     telemetry?.modelsByRole?.router ??
     item.modelsUsed?.[0] ??
-    "meta-llama/llama-3.2-3b-instruct";
+    "alibaba/qwen3.5-9b";
   const specialistModel =
-    telemetry?.modelsByRole?.specialists?.[0] ??
+    (typeof telemetry?.modelsByRole?.specialists?.[0] === "object"
+      ? (telemetry?.modelsByRole?.specialists?.[0] as { model?: string })?.model
+      : telemetry?.modelsByRole?.specialists?.[0]) ??
     item.modelsUsed?.[1] ??
-    "Qwen/Qwen2.5-Coder-7B-Instruct";
+    "alibaba/qwen3-32b";
   const synthesizerModel =
     telemetry?.modelsByRole?.synthesizer ??
     item.modelsUsed?.[2] ??
-    "mistralai/Mistral-7B-Instruct-v0.3";
+    "alibaba/qwen3.6-35b-a3b";
 
   return (
     <motion.div
@@ -259,6 +262,11 @@ function AnalysisCard({ item, index }: { item: HistoryItem; index: number }) {
           <span className="inline-flex items-center gap-1 text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
             Otari Gateway Run #{item.id}
           </span>
+          {telemetry?.authTier && (
+            <span className="inline-flex items-center gap-1 text-[10px] font-mono px-2 py-0.5 rounded bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 uppercase">
+              {telemetry.authTier}
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-1.5 text-xs text-zinc-600 shrink-0 font-mono">
           <Clock className="w-3 h-3" />
