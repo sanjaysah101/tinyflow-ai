@@ -1,6 +1,11 @@
-import { generateObject } from "ai";
 import { z } from "zod";
-import { FALLBACK_CHAIN, getOtariProvider, MODELS } from "@/lib/openrouter";
+import {
+  callOtari,
+  FALLBACK_CHAIN,
+  MODELS,
+  OtariBudgetExceededError,
+  stripMarkdownCodeFences,
+} from "@/lib/openrouter";
 import type { SpecialistOutput } from "@/lib/pipeline/specialist";
 
 // ─── Helper Functions ────────────────────────────────────────
@@ -72,6 +77,10 @@ export const ReportSchema = z.object({
     .optional()
     .describe("Summary of sandbox code execution runs and live CVE lookups"),
   modelUsed: z.string().optional(),
+  provider: z.string().optional(),
+  resolvedModel: z.string().optional(),
+  guardrailsHeader: z.string().optional(),
+  reasoning: z.string().optional(),
   fallbackTriggered: z.boolean().optional(),
   costUsd: z.number().optional(),
   tokensUsed: z.number().optional(),
@@ -208,11 +217,6 @@ export async function runSynthesizer(
   };
 
   try {
-    const provider = getOtariProvider({
-      apiKey: options?.apiKey,
-      baseURL: options?.baseUrl,
-    });
-
     const prompt =
       sanitizeToAscii(`You are an Otari lead review synthesizer. Review these specialist findings:
 
@@ -223,43 +227,103 @@ export async function runSynthesizer(
 ${sanitizedSpecialistSummary}
 
 Synthesize a concise, high-impact review report.
-- headline: punchy one-sentence summary of overall risk
-- topPriority: single most urgent item to address first
-- knownLimitations: brief note on verified scope`);
+Return JSON with format:
+{
+  "overallRisk": "critical"|"high"|"medium"|"low"|"clean",
+  "headline": "punchy one-sentence summary of overall risk",
+  "topPriority": "single most urgent item to address first",
+  "knownLimitations": "brief note on verified scope"
+}`);
 
-    const { object } = await generateObject({
-      model: provider(defaultModel),
-      schema: z.object({
-        overallRisk: z.enum(["critical", "high", "medium", "low", "clean"]),
-        headline: z.string(),
-        topPriority: z.string(),
-        knownLimitations: z.string(),
-      }),
-      prompt,
-      maxOutputTokens: 400,
+    const synthResult = await callOtari({
+      role: "synthesizer",
+      messages: [
+        {
+          role: "system",
+          content:
+            'You are an expert review synthesizer. Return only valid JSON adhering to schema: { "overallRisk": "critical"|"high"|"medium"|"low"|"clean", "headline": "...", "topPriority": "...", "knownLimitations": "..." }',
+        },
+        { role: "user", content: prompt },
+      ],
+      maxTokens: 4096, // High token limit prevents exhaustion during Qwen reasoning
+      reasoningEffort: "low", // Low reasoning effort ensures final content is generated
+      apiKey: options?.apiKey,
+      baseUrl: options?.baseUrl,
+      testFallbackMode: options?.testFallbackMode,
+      userId: options?.userId,
+      userBudget: options?.userBudget,
     });
 
+    // Requirement 3:
+    // Strip markdown code fences on message.content before parsing JSON,
+    // and do NOT parse reasoning as the JSON answer.
+    let parsedObj: {
+      overallRisk?: "critical" | "high" | "medium" | "low" | "clean";
+      headline?: string;
+      topPriority?: string;
+      knownLimitations?: string;
+    } | null = null;
+
+    if (synthResult.content && synthResult.content.trim()) {
+      try {
+        const cleaned = stripMarkdownCodeFences(synthResult.content);
+        const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          parsedObj = JSON.parse(jsonMatch[0]);
+        }
+      } catch (parseErr) {
+        console.warn(
+          "[Synthesizer] Failed to parse JSON from synth message.content:",
+          parseErr,
+        );
+      }
+    }
+
+    if (parsedObj?.headline && parsedObj.overallRisk) {
+      return {
+        overallRisk: parsedObj.overallRisk,
+        headline: parsedObj.headline,
+        totalIssues: allIssues.length,
+        criticalCount,
+        highCount,
+        mediumCount,
+        lowCount,
+        topPriority: parsedObj.topPriority || allIssues[0]?.title || "Review issues",
+        categories: categoriesWithIssues,
+        knownLimitations:
+          parsedObj.knownLimitations ||
+          "Synthesized by Otari Open-Weight Pipeline. All specialist findings verified.",
+        otariVerificationSummary,
+        modelUsed: synthResult.resolvedModel || synthResult.modelUsed,
+        provider: synthResult.provider ?? undefined,
+        resolvedModel: synthResult.resolvedModel ?? undefined,
+        guardrailsHeader: synthResult.guardrailsHeader ?? undefined,
+        reasoning: synthResult.reasoning,
+        fallbackTriggered: synthResult.fallbackTriggered,
+        costUsd: synthResult.costUsd || 0.00005,
+        tokensUsed: Number(synthResult.tokensUsed) || 220,
+        latencyMs: Date.now() - synthStart,
+      };
+    }
+
     return {
-      overallRisk: object.overallRisk,
-      headline: object.headline,
-      totalIssues: allIssues.length,
-      criticalCount,
-      highCount,
-      mediumCount,
-      lowCount,
-      topPriority: object.topPriority,
-      categories: categoriesWithIssues,
-      knownLimitations:
-        object.knownLimitations ||
-        "Synthesized by Otari Open-Weight Pipeline. All specialist findings verified.",
-      otariVerificationSummary,
-      modelUsed: defaultModel,
-      fallbackTriggered: isFallback,
-      costUsd: 0.00005,
-      tokensUsed: 220,
+      ...FALLBACK,
+      modelUsed: synthResult.resolvedModel || synthResult.modelUsed,
+      provider: synthResult.provider ?? undefined,
+      resolvedModel: synthResult.resolvedModel ?? undefined,
+      guardrailsHeader: synthResult.guardrailsHeader ?? undefined,
+      costUsd: synthResult.costUsd || 0.00003,
+      tokensUsed: Number(synthResult.tokensUsed) || 120,
       latencyMs: Date.now() - synthStart,
     };
   } catch (error) {
+    if (
+      error instanceof OtariBudgetExceededError ||
+      (error as any)?.code === "budget_exceeded"
+    ) {
+      throw error;
+    }
+
     console.warn(
       "[Synthesizer] Gateway synthesis network error, using verified synthesis fallback:",
       error,

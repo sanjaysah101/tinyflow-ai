@@ -1,6 +1,11 @@
-import { generateObject } from "ai";
 import { z } from "zod";
-import { FALLBACK_CHAIN, getOtariProvider, MODELS } from "@/lib/openrouter";
+import {
+  callOtari,
+  FALLBACK_CHAIN,
+  MODELS,
+  OtariBudgetExceededError,
+  stripMarkdownCodeFences,
+} from "@/lib/openrouter";
 
 // ─── Schemas ────────────────────────────────────────────────
 
@@ -23,6 +28,9 @@ export const RouterOutputSchema = z.object({
   guardrailActions: z.array(z.string()).default([]),
   sanitizedCode: z.string().optional(),
   modelUsed: z.string().default("meta-llama/llama-3.2-3b-instruct"),
+  provider: z.string().optional(),
+  resolvedModel: z.string().optional(),
+  guardrailsHeader: z.string().optional(),
   fallbackTriggered: z.boolean().default(false),
   costUsd: z.number().default(0),
   tokensUsed: z.number().default(0),
@@ -247,21 +255,17 @@ export async function runRouter(
 
   // ── Step D: Call Otari Gateway for ambiguous code ──
   try {
-    const provider = getOtariProvider({
-      apiKey: options?.apiKey,
-      baseURL: options?.baseUrl,
-    });
-
-    const { object } = await generateObject({
-      model: provider(defaultModel),
-      schema: z.object({
-        language: z.string(),
-        categories: z.array(
-          z.enum(["security", "bugs", "performance", "style"]),
-        ),
-        confidence: z.number(),
-      }),
-      prompt: `Detect the programming language and relevant review categories for this code.
+    const routerResult = await callOtari({
+      role: "router",
+      messages: [
+        {
+          role: "system",
+          content:
+            'Detect the programming language and review categories. Return valid JSON: { "language": "...", "categories": ["security", "bugs"], "confidence": 0.9 }',
+        },
+        {
+          role: "user",
+          content: `Detect the programming language and relevant review categories for this code.
 Always include "security" if you see database queries, user input, or HTTP requests.
 Always include "bugs" if you see async/await or function calls.
 
@@ -269,26 +273,75 @@ Code:
 \`\`\`
 ${effectiveCode.slice(0, 1000)}
 \`\`\``,
-      maxOutputTokens: 150,
+        },
+      ],
+      maxTokens: 1024,
+      reasoningEffort: "low",
+      apiKey: options?.apiKey,
+      baseUrl: options?.baseUrl,
+      testFallbackMode: options?.testFallbackMode,
+      userId: options?.userId,
+      userBudget: options?.userBudget,
     });
 
+    let parsed: {
+      language?: string;
+      categories?: Array<"security" | "bugs" | "performance" | "style">;
+      confidence?: number;
+    } | null = null;
+
+    if (routerResult.content && routerResult.content.trim()) {
+      try {
+        const cleaned = stripMarkdownCodeFences(routerResult.content);
+        const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          parsed = JSON.parse(jsonMatch[0]);
+        }
+      } catch (parseErr) {
+        console.warn("[Router] Failed to parse JSON from content:", parseErr);
+      }
+    }
+
+    if (parsed && Array.isArray(parsed.categories)) {
+      return {
+        language:
+          detectedLanguage !== "unknown"
+            ? detectedLanguage
+            : parsed.language || "javascript",
+        categories: parsed.categories,
+        confidence: parsed.confidence || 0.9,
+        guardrailTriggered: guardrails.triggered,
+        guardrailActions: guardrails.actions,
+        sanitizedCode: effectiveCode,
+        modelUsed: routerResult.resolvedModel || routerResult.modelUsed,
+        provider: routerResult.provider ?? undefined,
+        resolvedModel: routerResult.resolvedModel ?? undefined,
+        guardrailsHeader: routerResult.guardrailsHeader ?? undefined,
+        fallbackTriggered: routerResult.fallbackTriggered,
+        costUsd: routerResult.costUsd,
+        tokensUsed: Number(routerResult.tokensUsed),
+        latencyMs: Date.now() - routerStart,
+      };
+    }
+
     return {
-      language:
-        detectedLanguage !== "unknown" ? detectedLanguage : object.language,
-      categories: object.categories as Array<
-        "security" | "bugs" | "performance" | "style"
-      >,
-      confidence: object.confidence,
-      guardrailTriggered: guardrails.triggered,
-      guardrailActions: guardrails.actions,
-      sanitizedCode: effectiveCode,
-      modelUsed: defaultModel,
-      fallbackTriggered: isFallback,
-      costUsd: 0.00003,
-      tokensUsed: 120,
+      ...FALLBACK,
+      modelUsed: routerResult.resolvedModel || routerResult.modelUsed,
+      provider: routerResult.provider ?? undefined,
+      resolvedModel: routerResult.resolvedModel ?? undefined,
+      guardrailsHeader: routerResult.guardrailsHeader ?? undefined,
+      costUsd: routerResult.costUsd,
+      tokensUsed: Number(routerResult.tokensUsed),
       latencyMs: Date.now() - routerStart,
     };
   } catch (error) {
+    if (
+      error instanceof OtariBudgetExceededError ||
+      (error as any)?.code === "budget_exceeded"
+    ) {
+      throw error;
+    }
+
     console.warn("[Router] Gateway call failed, using fallback:", error);
     return FALLBACK;
   }

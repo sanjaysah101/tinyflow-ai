@@ -103,6 +103,9 @@ interface Metrics {
 interface OtariTelemetry {
   authTier?: "byok" | "server_otari" | "failover_gateway";
   gatewayUrl?: string;
+  provider?: string;
+  resolvedModel?: string;
+  nativeGuardrails?: string;
   modelsByRole?: {
     router: string;
     specialists: Array<{
@@ -110,6 +113,10 @@ interface OtariTelemetry {
       model: string;
       fallback?: boolean;
       tools?: string[];
+      provider?: string;
+      resolvedModel?: string;
+      guardrailsHeader?: string;
+      costUsd?: number;
     }>;
     synthesizer: string;
   };
@@ -120,8 +127,10 @@ interface OtariTelemetry {
     passed: boolean;
     redactedCount: number;
     actions?: string[];
+    header?: string;
   };
   budget?: {
+    userId?: string;
     analysisCostUsd: number;
     userSpentUsd: number;
     userLimitUsd: number;
@@ -442,6 +451,10 @@ export default function AppPage() {
   const [budgetExceededAlert, setBudgetExceededAlert] = useState<string | null>(
     null,
   );
+  const [budgetRetryAfter, setBudgetRetryAfter] = useState<string | null>(null);
+  const [budgetErrorCode, setBudgetErrorCode] = useState<
+    "budget_exceeded" | "rate_limited" | null
+  >(null);
   const [otariTelemetry, setOtariTelemetry] = useState<OtariTelemetry | null>(
     null,
   );
@@ -536,6 +549,8 @@ export default function AppPage() {
     setMetrics(null);
     setError(null);
     setBudgetExceededAlert(null);
+    setBudgetRetryAfter(null);
+    setBudgetErrorCode(null);
     setGuardrailAlerts([]);
     setCompletedSteps([]);
     setPipelineStep("routing");
@@ -563,12 +578,32 @@ export default function AppPage() {
         }),
       });
 
-      if (res.status === 429) {
+      // Catch HTTP 429 or HTTP 403 (native budget_exceeded)
+      if (res.status === 429 || res.status === 403) {
         const errJson = await res.json().catch(() => ({}));
-        const msg =
-          errJson.message ||
-          `Per-User Budget Exceeded ($${userLimit.toFixed(2)} limit reached). Otari Gateway locked access.`;
+        const retryAfter =
+          res.headers.get("Retry-After") ||
+          res.headers.get("retry-after") ||
+          errJson.retryAfter ||
+          null;
+
+        const is403 =
+          res.status === 403 ||
+          errJson.code === "budget_exceeded" ||
+          /budget/i.test(errJson.message || "");
+
+        const retryText = retryAfter ? ` (Retry after ${retryAfter}s)` : "";
+        const defaultMsg = is403
+          ? `Otari Service Key Per-User Budget Exceeded (HTTP 403)${retryText}.`
+          : `Per-User Budget Exceeded ($${userLimit.toFixed(2)} limit reached). Otari Gateway locked access.`;
+
+        const msg = errJson.message
+          ? `${errJson.message}${retryText}`
+          : defaultMsg;
+
         setBudgetExceededAlert(msg);
+        setBudgetRetryAfter(retryAfter);
+        setBudgetErrorCode(is403 ? "budget_exceeded" : "rate_limited");
         setError(msg);
         setPipelineStep("error");
         return;
@@ -656,7 +691,26 @@ export default function AppPage() {
                 setStepMessage(
                   "Analysis complete via Mozilla Otari AI Gateway!",
                 );
+              } else if (currentEvent === "budget_exceeded") {
+                const retryText = data.retryAfter
+                  ? ` (Retry after ${data.retryAfter}s)`
+                  : "";
+                const msg = `${data.message || "Otari Service Key Per-User Budget Exceeded"}${retryText}`;
+                setBudgetExceededAlert(msg);
+                setBudgetRetryAfter(data.retryAfter || null);
+                setBudgetErrorCode("budget_exceeded");
+                setError(msg);
+                setPipelineStep("error");
               } else if (currentEvent === "error") {
+                if (data.code === "budget_exceeded" || data.status === 403) {
+                  const retryText = data.retryAfter
+                    ? ` (Retry after ${data.retryAfter}s)`
+                    : "";
+                  const msg = `${data.message || "Otari Service Key Per-User Budget Exceeded"}${retryText}`;
+                  setBudgetExceededAlert(msg);
+                  setBudgetRetryAfter(data.retryAfter || null);
+                  setBudgetErrorCode("budget_exceeded");
+                }
                 throw new Error(data.message);
               }
             } catch {
@@ -676,6 +730,8 @@ export default function AppPage() {
     setMetrics(null);
     setError(null);
     setBudgetExceededAlert(null);
+    setBudgetRetryAfter(null);
+    setBudgetErrorCode(null);
     setGuardrailAlerts([]);
     setCompletedSteps([]);
     setPipelineStep("idle");
@@ -1113,7 +1169,7 @@ export default function AppPage() {
             )}
           </AnimatePresence>
 
-          {/* Budget 429 Alert Banner */}
+          {/* Budget 429/403 Alert Banner */}
           {budgetExceededAlert && (
             <motion.div
               initial={{ opacity: 0, y: -8 }}
@@ -1124,18 +1180,28 @@ export default function AppPage() {
                 <Lock className="w-5 h-5" />
               </div>
               <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-xs font-bold font-mono text-red-400 uppercase">
-                    HTTP 429: Otari Per-User Budget Limit Enforced
+                    {budgetErrorCode === "budget_exceeded" ||
+                    budgetExceededAlert.includes("403") ||
+                    budgetExceededAlert.toLowerCase().includes("budget_exceeded")
+                      ? "HTTP 403: Otari Native Service Key Budget Exceeded"
+                      : "HTTP 429: Otari Per-User Budget Limit Enforced"}
                   </span>
+                  {budgetRetryAfter && (
+                    <span className="text-[10px] font-mono font-medium px-2 py-0.5 rounded bg-red-500/20 border border-red-500/40 text-red-200">
+                      Retry-After: {budgetRetryAfter}s
+                    </span>
+                  )}
                 </div>
                 <p className="text-xs text-zinc-300 mt-1">
                   {budgetExceededAlert}
                 </p>
                 <p className="text-[11px] text-zinc-500 mt-1">
-                  Mozilla Otari AI Gateway tracks cumulative token costs per
-                  client fingerprint and rejects excessive inference requests to
-                  protect infrastructure budgets.
+                  {budgetErrorCode === "budget_exceeded" ||
+                  budgetExceededAlert.includes("403")
+                    ? "Mozilla Otari AI Gateway enforced service key per-user budget limits via HTTP 403 budget_exceeded."
+                    : "Mozilla Otari AI Gateway tracks cumulative token costs per client fingerprint and rejects excessive inference requests to protect infrastructure budgets."}
                 </p>
               </div>
               <button
@@ -1143,6 +1209,8 @@ export default function AppPage() {
                 onClick={() => {
                   setUserLimit(0.5);
                   setBudgetExceededAlert(null);
+                  setBudgetRetryAfter(null);
+                  setBudgetErrorCode(null);
                 }}
                 className="text-xs font-medium px-3 py-1.5 rounded-lg bg-red-500/20 hover:bg-red-500/30 text-red-300 transition-colors shrink-0"
               >
@@ -1445,6 +1513,39 @@ export default function AppPage() {
                           {otariTelemetry.fallbacksTriggered ?? 0} triggered
                         </span>
                       </div>
+                      {otariTelemetry.provider && (
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-zinc-400 flex items-center gap-1.5">
+                            <Layers className="w-3 h-3 text-cyan-400" />
+                            Otari-Provider:
+                          </span>
+                          <span className="font-mono text-cyan-300">
+                            {otariTelemetry.provider}
+                          </span>
+                        </div>
+                      )}
+                      {otariTelemetry.resolvedModel && (
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-zinc-400 flex items-center gap-1.5">
+                            <Cpu className="w-3 h-3 text-amber-400" />
+                            Otari-Model:
+                          </span>
+                          <span className="font-mono text-amber-300">
+                            {otariTelemetry.resolvedModel}
+                          </span>
+                        </div>
+                      )}
+                      {otariTelemetry.nativeGuardrails && (
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-zinc-400 flex items-center gap-1.5">
+                            <ShieldCheck className="w-3 h-3 text-emerald-400" />
+                            Otari-Guardrails:
+                          </span>
+                          <span className="font-mono text-emerald-300">
+                            {otariTelemetry.nativeGuardrails}
+                          </span>
+                        </div>
+                      )}
                       {otariTelemetry.authTier && (
                         <div className="flex items-center justify-between text-xs pt-1 border-t border-white/5">
                           <span className="text-zinc-400 flex items-center gap-1.5">

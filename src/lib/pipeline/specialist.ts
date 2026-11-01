@@ -1,5 +1,11 @@
 import { z } from "zod";
-import { callOtari, FALLBACK_CHAIN, MODELS } from "@/lib/openrouter";
+import {
+  callOtari,
+  FALLBACK_CHAIN,
+  MODELS,
+  OtariBudgetExceededError,
+  stripMarkdownCodeFences,
+} from "@/lib/openrouter";
 import { formatPatternsAsContext, retrievePatterns } from "@/lib/rag";
 
 // ─── Schemas ────────────────────────────────────────────────
@@ -49,6 +55,10 @@ export const SpecialistOutputSchema = z.object({
     .string()
     .describe("One-sentence summary of findings for this category"),
   modelUsed: z.string().default("alibaba/qwen3-32b"),
+  provider: z.string().optional(),
+  resolvedModel: z.string().optional(),
+  guardrailsHeader: z.string().optional(),
+  reasoning: z.string().optional(),
   fallbackTriggered: z.boolean().default(false),
   toolsInvoked: z.array(z.enum(["code_execution", "web_search"])).default([]),
   sandboxRuns: z.array(SandboxRunSchema).default([]),
@@ -534,6 +544,10 @@ Return JSON with format: { "issues": [ { "title": "...", "description": "...", "
   let aiIssues: Issue[] = [];
   let tokensUsed = 0;
   let costUsd = 0;
+  let otariProvider: string | null = null;
+  let otariModel: string | null = null;
+  let otariGuardrails: string | null = null;
+  let otariReasoning: string | undefined = undefined;
 
   try {
     const otariTools =
@@ -556,6 +570,9 @@ Return JSON with format: { "issues": [ { "title": "...", "description": "...", "
       apiKey: options?.apiKey,
       baseUrl: options?.baseUrl,
       testFallbackMode: options?.testFallbackMode,
+      maxTokens: 4096, // Increase max_tokens so reasoning models never exhaust tokens
+      reasoningEffort: "low", // reasoning_effort: "low" so content is not left empty
+      userId: options?.userId,
       userBudget: options?.userId
         ? {
             userId: options.userId,
@@ -568,37 +585,59 @@ Return JSON with format: { "issues": [ { "title": "...", "description": "...", "
     fallbackTriggered = otariResult.fallbackTriggered;
     tokensUsed = Number(otariResult.tokensUsed);
     costUsd = otariResult.costUsd;
+    otariProvider = otariResult.provider ?? null;
+    otariModel = otariResult.resolvedModel ?? null;
+    otariGuardrails = otariResult.guardrailsHeader ?? null;
+    otariReasoning = otariResult.reasoning;
 
-    // Parse JSON output from content
-    try {
-      const jsonMatch = otariResult.content.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        const parsed = JSON.parse(jsonMatch[0]);
-        if (Array.isArray(parsed.issues)) {
-          aiIssues = parsed.issues.map((i: Record<string, unknown>) => {
-            const sev =
-              typeof i.severity === "string" ? i.severity.toLowerCase() : "";
-            const severity: "critical" | "high" | "medium" | "low" =
-              sev === "critical" || sev === "high" || sev === "low"
-                ? sev
-                : "medium";
+    // Requirement 3:
+    // Otari returns thinking tokens in choices[0].message.reasoning while
+    // choices[0].message.content holds only the final answer.
+    // Strip markdown code fences on message.content before parsing JSON,
+    // and do NOT parse reasoning as the JSON answer.
+    const rawContent = otariResult.content;
+    if (rawContent && rawContent.trim()) {
+      try {
+        const cleaned = stripMarkdownCodeFences(rawContent);
+        const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          const parsed = JSON.parse(jsonMatch[0]);
+          if (Array.isArray(parsed.issues)) {
+            aiIssues = parsed.issues.map((i: Record<string, unknown>) => {
+              const sev =
+                typeof i.severity === "string" ? i.severity.toLowerCase() : "";
+              const severity: "critical" | "high" | "medium" | "low" =
+                sev === "critical" || sev === "high" || sev === "low"
+                  ? sev
+                  : "medium";
 
-            return {
-              line: typeof i.line === "number" ? i.line : undefined,
-              title: String(i.title || "Identified issue"),
-              description: String(i.description || ""),
-              severity,
-              fix: String(i.fix || ""),
-              sandboxVerified: false,
-              citations: [],
-            };
-          });
+              return {
+                line: typeof i.line === "number" ? i.line : undefined,
+                title: String(i.title || "Identified issue"),
+                description: String(i.description || ""),
+                severity,
+                fix: String(i.fix || ""),
+                sandboxVerified: false,
+                citations: [],
+              };
+            });
+          }
         }
+      } catch (parseErr) {
+        console.warn(
+          `[Specialist:${category}] Failed to parse JSON from message.content:`,
+          parseErr,
+        );
       }
-    } catch {
-      // JSON extraction fallback handled below
     }
   } catch (error) {
+    if (
+      error instanceof OtariBudgetExceededError ||
+      (error as any)?.code === "budget_exceeded"
+    ) {
+      throw error; // Propagate native 403 budget_exceeded error up to API route
+    }
+
     console.warn(
       `[Specialist:${category}] Otari call error, using static checks:`,
       error,
@@ -675,6 +714,10 @@ Return JSON with format: { "issues": [ { "title": "...", "description": "...", "
     safe: isSafe,
     summary: rawSummary,
     modelUsed,
+    provider: otariProvider ?? undefined,
+    resolvedModel: otariModel ?? undefined,
+    guardrailsHeader: otariGuardrails ?? undefined,
+    reasoning: otariReasoning,
     fallbackTriggered,
     toolsInvoked,
     sandboxRuns,
@@ -697,6 +740,17 @@ export async function runAllSpecialists(
   const results = await Promise.allSettled(
     categories.map((cat) => runSpecialist(code, cat, language, options)),
   );
+
+  // If any specialist failed due to native budget exceeded, rethrow immediately
+  for (const result of results) {
+    if (
+      result.status === "rejected" &&
+      (result.reason instanceof OtariBudgetExceededError ||
+        result.reason?.code === "budget_exceeded")
+    ) {
+      throw result.reason;
+    }
+  }
 
   return results.map((result, i) => {
     if (result.status === "fulfilled") return result.value;

@@ -1,7 +1,12 @@
 import { embed } from "ai";
 import { and, eq, or } from "drizzle-orm";
 import { db, vulnerabilityPatterns } from "@/lib/db";
-import { MODELS, openrouter } from "@/lib/openrouter";
+import {
+  callOtariEmbeddings,
+  MODELS,
+  openrouter,
+  OtariBudgetExceededError,
+} from "@/lib/openrouter";
 
 export interface VulnerabilityPattern {
   id: number;
@@ -16,9 +21,31 @@ export interface VulnerabilityPattern {
 }
 
 /**
- * Generate an embedding vector for a given text using nomic-embed-text.
+ * Generate an embedding vector for a given text using Otari gateway embeddings (passing OpenAI `user` parameter).
  */
-export async function embedText(text: string): Promise<number[]> {
+export async function embedText(
+  text: string,
+  userId?: string,
+): Promise<number[]> {
+  try {
+    const result = await callOtariEmbeddings({
+      text,
+      userId: userId || "anonymous-user",
+      model: MODELS.embedding,
+    });
+    if (result.embedding && result.embedding.length > 0) {
+      return result.embedding;
+    }
+  } catch (err: unknown) {
+    if (err instanceof OtariBudgetExceededError) {
+      throw err; // Propagate native 403 budget_exceeded error
+    }
+    console.warn(
+      "[RAG] Otari native embeddings call failed, falling back to openrouter.embedding:",
+      err,
+    );
+  }
+
   const { embedding } = await embed({
     model: openrouter.embedding(MODELS.embedding),
     value: text,
@@ -41,14 +68,18 @@ export async function retrievePatterns(
   category: string,
   language: string,
   topK = 4,
+  userId?: string,
 ): Promise<VulnerabilityPattern[]> {
   // Build a query string that combines the code context with the category
   const queryText = `${category} vulnerability in ${language} code: ${codeSnippet.slice(0, 500)}`;
 
   let queryEmbedding: number[];
   try {
-    queryEmbedding = await embedText(queryText);
-  } catch {
+    queryEmbedding = await embedText(queryText, userId);
+  } catch (err) {
+    if (err instanceof OtariBudgetExceededError) {
+      throw err;
+    }
     console.warn(
       `[RAG] Embedding failed for category ${category}, proceeding without context`,
     );
@@ -99,16 +130,21 @@ export async function retrievePatterns(
 export function formatPatternsAsContext(
   patterns: VulnerabilityPattern[],
 ): string {
-  if (patterns.length === 0) {
-    return "No specific patterns retrieved. Rely on your training knowledge.";
-  }
+  if (patterns.length === 0) return "";
 
   return patterns
-    .map(
-      (p, i) =>
-        `[Pattern ${i + 1}] ${p.pattern_name} (${p.severity.toUpperCase()})\n` +
-        `Description: ${p.description}\n` +
-        (p.fix_suggestion ? `Fix: ${p.fix_suggestion}` : ""),
-    )
+    .map((p, idx) => {
+      const parts = [
+        `### Pattern ${idx + 1}: ${p.pattern_name} [${p.severity.toUpperCase()}]`,
+        p.description,
+      ];
+      if (p.example_code) {
+        parts.push(`Vulnerable example:\n\`\`\`\n${p.example_code}\n\`\`\``);
+      }
+      if (p.fix_suggestion) {
+        parts.push(`Recommended fix:\n${p.fix_suggestion}`);
+      }
+      return parts.join("\n");
+    })
     .join("\n\n");
 }

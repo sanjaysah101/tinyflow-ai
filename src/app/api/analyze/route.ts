@@ -1,4 +1,5 @@
 import { analysisHistory, db } from "@/lib/db";
+import { OtariBudgetExceededError } from "@/lib/openrouter";
 import { runRouter } from "@/lib/pipeline/router";
 import { runAllSpecialists } from "@/lib/pipeline/specialist";
 import { runSynthesizer } from "@/lib/pipeline/synthesizer";
@@ -177,6 +178,10 @@ export async function POST(req: Request) {
           guardrailActions: routerOutput.guardrailActions,
           otari_telemetry: {
             authTier,
+            provider: routerOutput.provider,
+            model: routerOutput.modelUsed,
+            guardrailsHeader: routerOutput.guardrailsHeader,
+            costUsd: routerOutput.costUsd,
             guardrails: {
               passed: !routerOutput.guardrailTriggered,
               actions: routerOutput.guardrailActions,
@@ -216,6 +221,11 @@ export async function POST(req: Request) {
           (s) => s.fallbackTriggered,
         ).length;
 
+        const specialistsCost = specialistOutputs.reduce(
+          (sum, s) => sum + (s.costUsd || 0.00005),
+          0,
+        );
+
         emit("specialists_done", {
           categories: specialistOutputs.map((s) => ({
             category: s.category,
@@ -223,9 +233,16 @@ export async function POST(req: Request) {
             safe: s.safe,
             sandboxRunsCount: s.sandboxRuns.length,
             webQueriesCount: s.webSearchQueries.length,
+            provider: s.provider,
+            model: s.modelUsed,
+            costUsd: s.costUsd,
           })),
           otari_telemetry: {
             authTier,
+            provider: specialistOutputs[0]?.provider,
+            model: specialistOutputs[0]?.modelUsed,
+            guardrailsHeader: specialistOutputs[0]?.guardrailsHeader,
+            costUsd: specialistsCost,
             codeExecutionRuns: allSandboxRuns,
             webSearchQueries: allWebSearchQueries,
           },
@@ -256,10 +273,6 @@ export async function POST(req: Request) {
 
         // ── Step 4: Budget & Telemetry Aggregation ───────────
         const routerCost = routerOutput.costUsd || 0.00002;
-        const specialistsCost = specialistOutputs.reduce(
-          (sum, s) => sum + (s.costUsd || 0.00005),
-          0,
-        );
         const synthesizerCost = report.costUsd || 0.00005;
         const analysisCostUsd = Number(
           (routerCost + specialistsCost + synthesizerCost).toFixed(6),
@@ -280,18 +293,43 @@ export async function POST(req: Request) {
           specialistFallbacks +
           (report.fallbackTriggered ? 1 : 0);
 
+        const resolvedProvider =
+          report.provider ||
+          specialistOutputs.find((s) => s.provider)?.provider ||
+          routerOutput.provider ||
+          "Mozilla Otari Upstream";
+
+        const resolvedModel =
+          report.resolvedModel ||
+          specialistOutputs.find((s) => s.resolvedModel)?.resolvedModel ||
+          report.modelUsed;
+
+        const resolvedGuardrails =
+          report.guardrailsHeader ||
+          specialistOutputs.find((s) => s.guardrailsHeader)?.guardrailsHeader ||
+          routerOutput.guardrailsHeader ||
+          "enforced";
+
         const otariTelemetry = {
           authTier,
+          provider: resolvedProvider,
+          resolvedModel,
+          nativeGuardrails: resolvedGuardrails,
           modelsByRole: {
             router: routerOutput.modelUsed,
             specialists: specialistOutputs.map((s) => ({
               category: s.category,
               model: s.modelUsed,
+              provider: s.provider,
+              resolvedModel: s.resolvedModel,
+              guardrailsHeader: s.guardrailsHeader,
               fallback: s.fallbackTriggered,
               tools: s.toolsInvoked,
+              costUsd: s.costUsd,
             })),
             synthesizer: report.modelUsed || "alibaba/qwen3.6-35b-a3b",
           },
+          costUsd: analysisCostUsd,
           fallbacksTriggered: totalFallbacks,
           codeExecutionRuns: allSandboxRuns,
           webSearchQueries: allWebSearchQueries,
@@ -299,6 +337,7 @@ export async function POST(req: Request) {
             passed: !routerOutput.guardrailTriggered,
             redactedCount: routerOutput.guardrailActions.length,
             actions: routerOutput.guardrailActions,
+            header: resolvedGuardrails,
           },
           budget: {
             userId,
@@ -357,11 +396,39 @@ export async function POST(req: Request) {
             tier: "Open-Weight (Mozilla Otari Gateway)",
             estimatedCost: `$${analysisCostUsd.toFixed(4)}`,
             costUsd: analysisCostUsd,
+            provider: resolvedProvider,
+            guardrails: resolvedGuardrails,
           },
           otari_telemetry: otariTelemetry,
         });
-      } catch (err) {
-        emit("error", { message: String(err) });
+      } catch (err: unknown) {
+        const isBudget =
+          err instanceof OtariBudgetExceededError ||
+          (err as any)?.code === "budget_exceeded" ||
+          (err as any)?.status === 403;
+
+        if (isBudget) {
+          const retryAfter = (err as any)?.retryAfter ?? null;
+          const msg =
+            (err as any)?.message ||
+            `Otari per-user budget exceeded for user "${userId}". HTTP 403 budget_exceeded.`;
+
+          emit("budget_exceeded", {
+            code: "budget_exceeded",
+            status: 403,
+            message: msg,
+            retryAfter,
+            userId,
+          });
+          emit("error", {
+            code: "budget_exceeded",
+            status: 403,
+            message: msg,
+            retryAfter,
+          });
+        } else {
+          emit("error", { message: String((err as Error)?.message || err) });
+        }
       } finally {
         controller.close();
       }

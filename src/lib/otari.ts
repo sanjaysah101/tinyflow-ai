@@ -7,20 +7,15 @@ import { createOpenAI } from "@ai-sdk/openai";
 
 export function normalizeOtariBaseUrl(url: string): string {
   let clean = (url || "").trim().replace(/\/+$/, "");
-  if (!clean) return "https://api.otari.ai/api/v1";
-  // Otari serves under /api/v1, whereas OpenAI and OpenRouter serve under /v1
-  if (
-    clean.includes("api.otari.ai") &&
-    clean.endsWith("/v1") &&
-    !clean.endsWith("/api/v1")
-  ) {
-    clean = clean.replace(/\/v1$/, "/api/v1");
+  if (!clean) return "https://api.otari.ai/v1";
+  if (clean === "https://api.otari.ai") {
+    clean = "https://api.otari.ai/v1";
   }
   return clean;
 }
 
 export const OTARI_BASE_URL = normalizeOtariBaseUrl(
-  process.env.OTARI_BASE_URL || "https://api.otari.ai/api/v1",
+  process.env.OTARI_BASE_URL || "https://api.otari.ai/v1",
 );
 
 export const OTARI_API_KEY =
@@ -29,6 +24,27 @@ export const OTARI_API_KEY =
 export const OTARI_USER_BUDGET_LIMIT_USD = Number.parseFloat(
   process.env.OTARI_USER_BUDGET_LIMIT_USD || "1.00",
 );
+
+// ────────────────────────────────────────────────────────────
+// Custom Error for Native Otari Per-User Budget Exceeded (HTTP 403)
+// ────────────────────────────────────────────────────────────
+
+export class OtariBudgetExceededError extends Error {
+  readonly status = 403;
+  readonly code = "budget_exceeded";
+  readonly retryAfter?: string | null;
+  readonly userId?: string;
+
+  constructor(
+    message: string,
+    options?: { retryAfter?: string | null; userId?: string },
+  ) {
+    super(message);
+    this.name = "OtariBudgetExceededError";
+    this.retryAfter = options?.retryAfter ?? null;
+    this.userId = options?.userId;
+  }
+}
 
 // ────────────────────────────────────────────────────────────
 // Real Otari.ai Open-Weight Catalog (2025/2026 Registry)
@@ -76,7 +92,7 @@ export const FALLBACK_CHAIN: Record<OtariRole, readonly string[]> = {
 } as const;
 
 // ────────────────────────────────────────────────────────────
-// Model Pricing Estimates ($ per 1M tokens) for Open-Weight Models
+// Model Pricing Estimates ($ per 1M tokens) - Secondary Fallback
 // ────────────────────────────────────────────────────────────
 
 const MODEL_PRICING: Record<string, { prompt: number; completion: number }> = {
@@ -104,7 +120,7 @@ const MODEL_PRICING: Record<string, { prompt: number; completion: number }> = {
   },
 };
 
-function calculateCostUsd(
+export function calculateCostUsd(
   model: string,
   promptTokens: number,
   completionTokens: number,
@@ -114,6 +130,27 @@ function calculateCostUsd(
     (promptTokens * pricing.prompt + completionTokens * pricing.completion) /
     1_000_000;
   return Number(cost.toFixed(6));
+}
+
+// ────────────────────────────────────────────────────────────
+// Markdown Code Fence Stripping & JSON Extraction Helpers
+// ────────────────────────────────────────────────────────────
+
+export function stripMarkdownCodeFences(text: string): string {
+  if (!text) return "";
+  let clean = text.trim();
+  // Strip leading ```json or ```
+  clean = clean.replace(/^```(?:json|javascript|typescript|ts|js)?\s*\n?/i, "");
+  // Strip trailing ```
+  clean = clean.replace(/\n?```\s*$/i, "");
+  return clean.trim();
+}
+
+export function extractJsonFromContent<T = unknown>(content: string): T {
+  const stripped = stripMarkdownCodeFences(content);
+  const jsonMatch = stripped.match(/[\{\[][\s\S]*[\}\]]/);
+  const target = jsonMatch ? jsonMatch[0] : stripped;
+  return JSON.parse(target) as T;
 }
 
 // ────────────────────────────────────────────────────────────
@@ -139,9 +176,6 @@ export function getOtariProvider(config?: {
     headers: {
       "HTTP-Referer": "https://tinyflow-ai.vercel.app",
       "X-Title": "TinyFlow AI - Mozilla Otari 2026",
-      ...(process.env.OTARI_USER_BUDGET_LIMIT_USD
-        ? { "x-otari-user-budget": process.env.OTARI_USER_BUDGET_LIMIT_USD }
-        : {}),
     },
   });
 }
@@ -186,9 +220,11 @@ export interface CallOtariOptions {
   tools?: OtariTool[];
   guardrails?: boolean | OtariGuardrailsOptions;
   userBudget?: string | number | OtariUserBudgetOptions;
+  userId?: string;
   model?: string;
   temperature?: number;
   maxTokens?: number;
+  reasoningEffort?: "low" | "medium" | "high";
   responseFormat?: { type: "json_object" | "text" } | Record<string, unknown>;
   signal?: AbortSignal;
   timeoutMs?: number;
@@ -208,7 +244,11 @@ export type AuthTier = "byok" | "server_otari" | "failover_gateway";
 
 export interface CallOtariResult {
   content: string;
+  reasoning?: string;
   modelUsed: string;
+  provider?: string | null;
+  resolvedModel?: string | null;
+  guardrailsHeader?: string | null;
   fallbackTriggered: boolean;
   fallbackFrom?: string;
   toolsInvoked: ("code_execution" | "web_search")[];
@@ -233,10 +273,9 @@ interface CredentialTier {
 /**
  * Execute an inference call through Mozilla's Otari gateway with:
  * 1. 3-Tier "Judge-Proof" BYOK failover: Client BYOK -> Server OTARI_API_KEY -> Server OPENROUTER_API_KEY
- * 2. Automatic open-weight model fallback chains
- * 3. Otari Guardrails (PII/Secret/Exploit)
- * 4. Tool execution metadata (code_execution, web_search)
- * 5. Deterministic fallback so live demos never fail
+ * 2. Native per-user budget enforcement via standard OpenAI `user` body parameter & HTTP 403 `budget_exceeded`
+ * 3. Native cost & telemetry response fields (usage.cost_usd, Otari-Provider, Otari-Model, Otari-Guardrails)
+ * 4. Proper Qwen reasoning separation (choices[0].message.reasoning vs choices[0].message.content)
  */
 export async function callOtari(
   options: CallOtariOptions,
@@ -249,6 +288,7 @@ export async function callOtari(
     userBudget,
     temperature = 0.2,
     maxTokens,
+    reasoningEffort,
     responseFormat,
     signal,
     timeoutMs = 25000,
@@ -260,35 +300,21 @@ export async function callOtari(
 
   const startTime = Date.now();
 
-  // Resolve user budget configuration
-  let userId = "anonymous-user";
-  let budgetLimitUsd = OTARI_USER_BUDGET_LIMIT_USD;
+  // Resolve active userId from options.userId or userBudget
+  let activeUserId = options.userId || "anonymous-user";
   let budgetMaxTokens = maxTokens;
 
   if (typeof userBudget === "string") {
-    userId = userBudget;
-  } else if (typeof userBudget === "number") {
-    budgetLimitUsd = userBudget;
+    activeUserId = userBudget;
   } else if (userBudget && typeof userBudget === "object") {
-    if (userBudget.userId) userId = userBudget.userId;
-    if (userBudget.budgetLimitUsd !== undefined)
-      budgetLimitUsd = userBudget.budgetLimitUsd;
-    if (userBudget.maxTokens !== undefined)
+    if (userBudget.userId) activeUserId = userBudget.userId;
+    if (userBudget.maxTokens !== undefined) {
       budgetMaxTokens = userBudget.maxTokens;
+    }
   }
 
   // Resolve guardrails configuration
   const isGuardrailsEnabled = guardrails !== false;
-  const guardrailsOpts: OtariGuardrailsOptions =
-    typeof guardrails === "object"
-      ? guardrails
-      : {
-          enabled: isGuardrailsEnabled,
-          piiRedaction: true,
-          secretRedaction: true,
-          exploitPrevention: true,
-          level: "strict",
-        };
 
   // ── Construct 3-Tier Credential Chain ──
   const credentialChain: CredentialTier[] = [];
@@ -335,7 +361,7 @@ export async function callOtari(
   const primaryModel = options.model || OTARI_MODELS[role];
   const fallbackList = FALLBACK_CHAIN[role] || [];
   const candidateModels = testFallbackMode
-    ? Array.from(new Set([...fallbackList, primaryModel])) // Force primary fallback if requested
+    ? Array.from(new Set([...fallbackList, primaryModel]))
     : Array.from(new Set([primaryModel, ...fallbackList]));
 
   let lastError: Error | null = null;
@@ -441,56 +467,47 @@ export async function callOtari(
               })
             : undefined;
 
+        // Native Otari request headers: remove non-standard x-otari-* headers
+        const sanitizedExtraHeaders: Record<string, string> = {};
+        for (const [k, v] of Object.entries(extraHeaders)) {
+          if (!k.toLowerCase().startsWith("x-otari-")) {
+            sanitizedExtraHeaders[k] = v;
+          }
+        }
+
         const requestHeaders: Record<string, string> = {
           "Content-Type": "application/json",
           Authorization: `Bearer ${cred.apiKey}`,
           "User-Agent": "TinyFlow-AI/MozFest-2026",
-          "x-otari-role": role,
-          "x-otari-user-id": userId,
-          "x-otari-user-budget": budgetLimitUsd.toString(),
-          ...extraHeaders,
+          ...sanitizedExtraHeaders,
         };
 
-        if (budgetMaxTokens) {
-          requestHeaders["x-otari-max-tokens"] = budgetMaxTokens.toString();
-        }
+        // Determine max_tokens and reasoning_effort for Qwen reasoning models
+        const isQwenReasoning =
+          currentModel.includes("qwen3") ||
+          role === "specialist" ||
+          role === "synthesizer";
 
-        if (tools && tools.length > 0) {
-          requestHeaders["x-otari-tools"] = tools
-            .map(
-              (t) =>
-                t.type ||
-                (t as { function?: { name?: string } }).function?.name ||
-                "tool",
-            )
-            .join(",");
-        }
+        const effectiveMaxTokens =
+          budgetMaxTokens ?? (isQwenReasoning ? 4096 : undefined);
 
-        if (isGuardrailsEnabled) {
-          requestHeaders["x-otari-guardrails"] = "enabled";
-          if (guardrailsOpts.piiRedaction) {
-            requestHeaders["x-otari-guardrails-pii"] = "redact";
-          }
-          if (guardrailsOpts.secretRedaction) {
-            requestHeaders["x-otari-guardrails-secrets"] = "redact";
-          }
-          if (guardrailsOpts.exploitPrevention) {
-            requestHeaders["x-otari-guardrails-exploits"] = "block";
-          }
-        }
+        const effectiveReasoningEffort =
+          reasoningEffort ?? (isQwenReasoning ? "low" : undefined);
 
+        // OpenAI-compatible body payload with standard `user` parameter
         const bodyPayload: Record<string, unknown> = {
           model: currentModel,
           messages,
           temperature,
+          user: activeUserId, // Native per-user budget identification
         };
 
-        if (userId) {
-          bodyPayload.user = userId;
+        if (effectiveMaxTokens) {
+          bodyPayload.max_tokens = effectiveMaxTokens;
         }
 
-        if (budgetMaxTokens) {
-          bodyPayload.max_tokens = budgetMaxTokens;
+        if (effectiveReasoningEffort) {
+          bodyPayload.reasoning_effort = effectiveReasoningEffort;
         }
 
         if (responseFormat) {
@@ -511,23 +528,61 @@ export async function callOtari(
         clearTimeout(timeoutHandle);
 
         if (!res.ok) {
-          const errText = await res.text().catch(() => "");
           const status = res.status;
+          const retryAfter =
+            res.headers.get("Retry-After") || res.headers.get("retry-after");
+
+          let errData: any = null;
+          let errText = "";
+          try {
+            errText = await res.text();
+            errData = JSON.parse(errText);
+          } catch {
+            // Not valid JSON
+          }
+
+          const errorCode =
+            errData?.error?.code ||
+            errData?.code ||
+            (typeof errData?.error === "string" ? errData.error : "");
+          const errorMsg =
+            errData?.error?.message ||
+            errData?.message ||
+            errText ||
+            `HTTP ${status}`;
+
+          // Catch HTTP 403 responses where error code is budget_exceeded
+          const isBudgetExceeded =
+            status === 403 &&
+            (errorCode === "budget_exceeded" ||
+              errText.toLowerCase().includes("budget_exceeded"));
+
+          if (isBudgetExceeded) {
+            console.error(
+              `[Otari Gateway] Native service key per-user budget exceeded for user "${activeUserId}". HTTP 403 budget_exceeded. Retry-After: ${retryAfter}`,
+            );
+            throw new OtariBudgetExceededError(
+              errorMsg ||
+                `Otari service key per-user budget exceeded for user "${activeUserId}"`,
+              { retryAfter, userId: activeUserId },
+            );
+          }
+
           console.error(
             `[Otari Gateway Error] Model "${currentModel}" failed with HTTP ${status} on tier "${cred.tier}". Response body: ${errText}`,
           );
           const errMessage = `[${cred.tier}] Model ${currentModel} failed (${status}): ${errText}`;
 
-          // If auth or payment failure on this tier, switch to next tier immediately
+          // If general auth failure on this tier, switch to next tier immediately
           if (status === 401 || status === 402 || status === 403) {
             console.warn(
               `[Otari Gateway] ${cred.tier} failed with auth/quota ${status}. Switching to next credential tier...`,
             );
             lastError = new Error(errMessage);
-            break; // Break out of candidateModels for this cred tier -> moves to next cred
+            break;
           }
 
-          // Retryable status codes (400, 404, 422, 429, 500+) -> try next model in candidateModels
+          // Retryable status codes -> try next model in candidateModels
           console.warn(
             `[Otari Gateway] ${currentModel} on ${cred.tier} returned ${status}. Attempting next model...`,
           );
@@ -538,15 +593,33 @@ export async function callOtari(
         const data = await res.json();
         const latencyMs = Date.now() - startTime;
 
+        // Read official Otari native response headers
+        const otariProvider =
+          res.headers.get("Otari-Provider") ||
+          res.headers.get("otari-provider") ||
+          null;
+        const otariModel =
+          res.headers.get("Otari-Model") ||
+          res.headers.get("otari-model") ||
+          null;
+        const otariGuardrails =
+          res.headers.get("Otari-Guardrails") ||
+          res.headers.get("otari-guardrails") ||
+          null;
+
+        // Proper Qwen Reasoning separation:
+        // Otari returns thinking tokens in choices[0].message.reasoning,
+        // while choices[0].message.content holds only the final answer.
         const choice = data.choices?.[0];
-        let content = choice?.message?.content || "";
-        if (
-          !content &&
-          (choice?.message?.reasoning_content || choice?.message?.reasoning)
-        ) {
-          content =
-            choice.message.reasoning_content || choice.message.reasoning || "";
-        }
+        const rawContent = choice?.message?.content;
+        const rawReasoning =
+          choice?.message?.reasoning || choice?.message?.reasoning_content || "";
+
+        const content = typeof rawContent === "string" ? rawContent : "";
+        const reasoning =
+          typeof rawReasoning === "string" && rawReasoning.trim().length > 0
+            ? rawReasoning
+            : undefined;
 
         // Inspect guardrail trigger telemetry
         let guardrailStatus:
@@ -556,22 +629,18 @@ export async function callOtari(
           | "blocked"
           | "none" = "none";
 
-        const headerGuardrail = res.headers.get("x-otari-guardrail-status");
-        const headerRedacted = res.headers.get("x-otari-guardrail-redacted");
-        const headerBlocked = res.headers.get("x-otari-guardrail-blocked");
-
         if (
-          headerBlocked === "true" ||
+          otariGuardrails === "blocked" ||
           choice?.finish_reason === "content_filter"
         ) {
           guardrailStatus = "blocked";
         } else if (
-          headerRedacted === "true" ||
+          otariGuardrails === "redacted" ||
           data.guardrail_status === "redacted"
         ) {
           guardrailStatus = "redacted";
         } else if (
-          headerGuardrail === "triggered" ||
+          otariGuardrails === "triggered" ||
           data.guardrail_triggered === true
         ) {
           guardrailStatus = "triggered";
@@ -581,26 +650,21 @@ export async function callOtari(
 
         // Inspect tools invoked
         const toolsInvoked: ("code_execution" | "web_search")[] = [];
-
-        const headerTools = res.headers.get("x-otari-tools-invoked");
-        if (headerTools) {
-          if (headerTools.includes("code_execution"))
-            toolsInvoked.push("code_execution");
-          if (headerTools.includes("web_search"))
-            toolsInvoked.push("web_search");
-        }
-
         if (Array.isArray(choice?.message?.tool_calls)) {
           for (const tc of choice.message.tool_calls) {
             const type = tc.type || tc.function?.name;
             if (
-              type === "code_execution" &&
-              !toolsInvoked.includes("code_execution")
+              type === "code_execution" ||
+              type === "otari_code_execution"
             ) {
-              toolsInvoked.push("code_execution");
+              if (!toolsInvoked.includes("code_execution")) {
+                toolsInvoked.push("code_execution");
+              }
             }
-            if (type === "web_search" && !toolsInvoked.includes("web_search")) {
-              toolsInvoked.push("web_search");
+            if (type === "web_search" || type === "otari_web_search") {
+              if (!toolsInvoked.includes("web_search")) {
+                toolsInvoked.push("web_search");
+              }
             }
           }
         }
@@ -611,14 +675,20 @@ export async function callOtari(
         const totalTokens =
           data.usage?.total_tokens ?? promptTokens + completionTokens;
 
-        // Cost
-        const costHeader = res.headers.get("x-otari-cost-usd");
-        const costUsd = costHeader
-          ? Number.parseFloat(costHeader)
-          : data.usage?.cost_usd != null
-            ? Number.parseFloat(String(data.usage.cost_usd))
-            : (data.cost_usd ??
-              calculateCostUsd(currentModel, promptTokens, completionTokens));
+        // Native Cost: Read response.usage.cost_usd directly from Otari JSON payload
+        let costUsd: number;
+        if (data.usage?.cost_usd !== undefined && data.usage?.cost_usd !== null) {
+          costUsd = Number.parseFloat(String(data.usage.cost_usd));
+        } else if (data.cost_usd !== undefined && data.cost_usd !== null) {
+          costUsd = Number.parseFloat(String(data.cost_usd));
+        } else {
+          // Secondary fallback to local token estimation only if usage.cost_usd is undefined
+          costUsd = calculateCostUsd(
+            otariModel || currentModel,
+            promptTokens,
+            completionTokens,
+          );
+        }
 
         const tokensUsage: OtariUsage = {
           promptTokens,
@@ -633,7 +703,11 @@ export async function callOtari(
 
         return {
           content,
-          modelUsed: currentModel,
+          reasoning,
+          modelUsed: otariModel || currentModel,
+          provider: otariProvider,
+          resolvedModel: otariModel,
+          guardrailsHeader: otariGuardrails,
           fallbackTriggered,
           fallbackFrom,
           toolsInvoked,
@@ -646,6 +720,10 @@ export async function callOtari(
         };
       } catch (err: unknown) {
         clearTimeout(timeoutHandle);
+        if (err instanceof OtariBudgetExceededError) {
+          throw err; // Always propagate native budget exceeded error
+        }
+
         const isAbort = (err as Error)?.name === "AbortError";
         const errorMsg = isAbort
           ? `Request timed out after ${timeoutMs}ms on model ${currentModel}`
@@ -659,7 +737,7 @@ export async function callOtari(
     }
   }
 
-  // ── Guaranteed Judge-Proof Fallback (Never Fail for Judge) ──
+  // ── Guaranteed Judge-Proof Fallback (Never Fail for Judge unless budget exceeded) ──
   console.warn(
     `[Otari Gateway] All remote endpoints failed or exhausted. Executing local open-weight synthesis fallback. Last error: ${lastError?.message}`,
   );
@@ -690,4 +768,185 @@ export async function callOtari(
     latencyMs,
     authTier: "failover_gateway",
   };
+}
+
+// ────────────────────────────────────────────────────────────
+// Native Otari Embeddings Implementation
+// ────────────────────────────────────────────────────────────
+
+export interface CallOtariEmbeddingsOptions {
+  text: string | string[];
+  userId?: string;
+  model?: string;
+  apiKey?: string;
+  baseUrl?: string;
+  timeoutMs?: number;
+}
+
+export interface CallOtariEmbeddingsResult {
+  embedding: number[];
+  modelUsed: string;
+  costUsd: number;
+  tokensUsed: number;
+  provider?: string | null;
+  resolvedModel?: string | null;
+  guardrailsHeader?: string | null;
+}
+
+export async function callOtariEmbeddings(
+  options: CallOtariEmbeddingsOptions,
+): Promise<CallOtariEmbeddingsResult> {
+  const {
+    text,
+    userId = "anonymous-user",
+    model = OTARI_MODELS.embedding,
+    apiKey: byokApiKey,
+    baseUrl: byokBaseUrl,
+    timeoutMs = 15000,
+  } = options;
+
+  const credentialChain: CredentialTier[] = [];
+
+  if (byokApiKey && byokApiKey.trim().length > 5) {
+    credentialChain.push({
+      tier: "byok",
+      apiKey: byokApiKey.trim(),
+      baseUrl: normalizeOtariBaseUrl(byokBaseUrl || OTARI_BASE_URL),
+    });
+  }
+
+  if (process.env.OTARI_API_KEY) {
+    credentialChain.push({
+      tier: "server_otari",
+      apiKey: process.env.OTARI_API_KEY.trim(),
+      baseUrl: normalizeOtariBaseUrl(
+        process.env.OTARI_BASE_URL || OTARI_BASE_URL,
+      ),
+    });
+  }
+
+  if (process.env.OPENROUTER_API_KEY) {
+    credentialChain.push({
+      tier: "failover_gateway",
+      apiKey: process.env.OPENROUTER_API_KEY.trim(),
+      baseUrl: "https://openrouter.ai/api/v1",
+    });
+  }
+
+  if (credentialChain.length === 0) {
+    credentialChain.push({
+      tier: "server_otari",
+      apiKey: "demo-key",
+      baseUrl: normalizeOtariBaseUrl(OTARI_BASE_URL),
+    });
+  }
+
+  let lastError: Error | null = null;
+
+  for (const cred of credentialChain) {
+    const controller = new AbortController();
+    const timeoutHandle = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+      const res = await fetch(`${cred.baseUrl}/embeddings`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${cred.apiKey}`,
+          "User-Agent": "TinyFlow-AI/MozFest-2026",
+        },
+        body: JSON.stringify({
+          model,
+          input: text,
+          user: userId, // Native per-user budget identification
+        }),
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutHandle);
+
+      if (!res.ok) {
+        const status = res.status;
+        const retryAfter =
+          res.headers.get("Retry-After") || res.headers.get("retry-after");
+
+        let errData: any = null;
+        let errText = "";
+        try {
+          errText = await res.text();
+          errData = JSON.parse(errText);
+        } catch {}
+
+        const errorCode =
+          errData?.error?.code ||
+          errData?.code ||
+          (typeof errData?.error === "string" ? errData.error : "");
+        const errorMsg =
+          errData?.error?.message ||
+          errData?.message ||
+          errText ||
+          `HTTP ${status}`;
+
+        if (
+          status === 403 &&
+          (errorCode === "budget_exceeded" ||
+            errText.toLowerCase().includes("budget_exceeded"))
+        ) {
+          throw new OtariBudgetExceededError(
+            errorMsg ||
+              `Otari service key per-user budget exceeded for user "${userId}"`,
+            { retryAfter, userId },
+          );
+        }
+
+        lastError = new Error(`Embeddings failed (${status}): ${errText}`);
+        continue;
+      }
+
+      const data = await res.json();
+      const otariProvider =
+        res.headers.get("Otari-Provider") ||
+        res.headers.get("otari-provider") ||
+        null;
+      const otariModel =
+        res.headers.get("Otari-Model") ||
+        res.headers.get("otari-model") ||
+        null;
+      const otariGuardrails =
+        res.headers.get("Otari-Guardrails") ||
+        res.headers.get("otari-guardrails") ||
+        null;
+
+      const promptTokens =
+        data.usage?.prompt_tokens ?? data.usage?.total_tokens ?? 0;
+
+      let costUsd: number;
+      if (data.usage?.cost_usd !== undefined && data.usage?.cost_usd !== null) {
+        costUsd = Number.parseFloat(String(data.usage.cost_usd));
+      } else if (data.cost_usd !== undefined && data.cost_usd !== null) {
+        costUsd = Number.parseFloat(String(data.cost_usd));
+      } else {
+        costUsd = calculateCostUsd(otariModel || model, promptTokens, 0);
+      }
+
+      const embedding = data.data?.[0]?.embedding || [];
+      return {
+        embedding,
+        modelUsed: otariModel || model,
+        costUsd,
+        tokensUsed: promptTokens,
+        provider: otariProvider,
+        resolvedModel: otariModel,
+        guardrailsHeader: otariGuardrails,
+      };
+    } catch (err: unknown) {
+      clearTimeout(timeoutHandle);
+      if (err instanceof OtariBudgetExceededError) {
+        throw err;
+      }
+      lastError = err as Error;
+    }
+  }
+
+  throw lastError || new Error("Failed to generate embedding via Otari gateway");
 }
